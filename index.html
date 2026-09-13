@@ -499,24 +499,55 @@
 
   .champ-match{
     display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
+    flex-direction:column;
+    gap:8px;
     background:var(--bg-elevated);
     border:1px solid var(--line);
     border-radius:var(--radius);
-    padding:10px 14px;
-    margin-bottom:8px;
+    padding:12px 14px;
+    margin-bottom:12px;
     font-size:13px;
-    flex-wrap:wrap;
+  }
+
+  .champ-match.is-live{
+    border-color:rgba(178,84,76,.5);
+  }
+
+  .champ-match.is-done{
+    border-color:rgba(201,162,75,.35);
+  }
+
+  .champ-match-top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
+
+  .champ-match-status{
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    padding:2px 9px;
+    border-radius:10px;
+    background:rgba(255,255,255,.06);
+    color:var(--text-dim);
+  }
+
+  .champ-match-status.live{
+    background:rgba(178,84,76,.18);
+    color:#e5a099;
+  }
+
+  .champ-match-status.done{
+    background:rgba(201,162,75,.16);
+    color:var(--gold);
   }
 
   .champ-match .side{
     display:flex;
     align-items:center;
     gap:8px;
-    flex:1;
-    min-width:120px;
   }
 
   .champ-match .side.winner{
@@ -527,6 +558,24 @@
   .champ-match .vs{
     color:var(--text-dim);
     font-size:11px;
+    text-align:center;
+  }
+
+  .champ-bracket-scroll{
+    display:flex;
+    gap:20px;
+    overflow-x:auto;
+    padding-bottom:10px;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .champ-round-col{
+    flex:0 0 auto;
+    width:240px;
+  }
+
+  @media(max-width:600px){
+    .champ-round-col{ width:220px; }
   }
 
   .campaign-progress-bar{
@@ -3514,6 +3563,14 @@
                 Jogar outra partida
               </button>
 
+              <button
+                class="btn ghost"
+                id="btnBackToChampionship"
+                style="width:100%;margin-top:8px;display:none;"
+              >
+                🏆 Voltar ao Campeonato
+              </button>
+
             </div>
 
           </div>
@@ -4855,6 +4912,32 @@
     );
 
   }
+
+
+  /*
+    Retorna o markup de exibição do "avatar" de um usuário: se
+    houver uma foto de perfil enviada, mostra a foto (img); caso
+    contrário, cai para o avatar SVG de sempre. Usado em qualquer
+    lugar que exiba a identidade visual de um jogador (perfil,
+    topo, ranking, partidas).
+  */
+
+  function renderAvatarOrPhoto(photoURL,avatarId){
+
+    if(photoURL){
+
+      return (
+        '<img src="'+photoURL+'" alt="" '+
+        'style="width:100%;height:100%;object-fit:cover;border-radius:50%;" '+
+        'onerror="this.style.display=\'none\';">'
+      );
+
+    }
+
+    return avatarSvgMarkup(avatarId||DEFAULT_AVATAR);
+
+  }
+
 
 
   /* =========================================================
@@ -8742,7 +8825,7 @@
 
       box.innerHTML=`
 
-        <span class="avatar-badge">${avatarSvgMarkup(getUserAvatarId(currentUser))}</span>
+        <span class="avatar-badge">${renderAvatarOrPhoto(currentUser.photoURL,getUserAvatarId(currentUser))}</span>
 
         <span class="who">
 
@@ -8832,7 +8915,7 @@
         'profileAvatarBadge'
       )
       .innerHTML=
-        avatarSvgMarkup(selected);
+        renderAvatarOrPhoto(currentUser.photoURL,selected);
 
 
     const picker=
@@ -9426,7 +9509,7 @@
 
                   <span class="rank-avatar">
 
-                    <span class="avatar-badge">${avatarSvgMarkup(getUserAvatarId(u))}</span>
+                    <span class="avatar-badge">${renderAvatarOrPhoto(u.photoURL,getUserAvatarId(u))}</span>
 
                     <span>
 
@@ -9858,6 +9941,7 @@
         hostUid:currentUser.uid,
         hostUsername:currentUser.username,
         hostAvatar:getUserAvatarId(currentUser),
+        hostPhotoURL:currentUser.photoURL||null,
         hostEloAtStart:
           Number(currentUser.eloPvp||1200),
 
@@ -10029,6 +10113,7 @@
           guestUid:currentUser.uid,
           guestUsername:currentUser.username,
           guestAvatar:getUserAvatarId(currentUser),
+          guestPhotoURL:currentUser.photoURL||null,
           guestEloAtStart:
             Number(currentUser.eloPvp||1200),
 
@@ -10309,6 +10394,11 @@
         ? (room.guestAvatar||'avatar1')
         : (room.hostAvatar||'avatar1');
 
+    const oppPhoto=
+      isHost
+        ? (room.guestPhotoURL||null)
+        : (room.hostPhotoURL||null);
+
     const oppElo=
       isHost
         ? (room.guestEloAtStart||1200)
@@ -10317,7 +10407,7 @@
 
     box.innerHTML=`
 
-      <span class="avatar-badge">${avatarSvgMarkup(oppAvatar)}</span>
+      <span class="avatar-badge">${renderAvatarOrPhoto(oppPhoto,oppAvatar)}</span>
 
       <div>
 
@@ -10948,6 +11038,17 @@
     resultCard.style.display='block';
 
 
+    const backToChampBtn=
+      document.getElementById('btnBackToChampionship');
+
+    if(backToChampBtn){
+
+      backToChampBtn.style.display=
+        room.championshipId ? 'block' : 'none';
+
+    }
+
+
     await applyOnlineEloUpdate(
       room,
       myResult
@@ -11187,6 +11288,40 @@
       'click',
       leaveOnlineRoom
     );
+
+
+  document
+    .getElementById('btnBackToChampionship')
+    .addEventListener('click',async()=>{
+
+      const champId=
+        onlineRoomData && onlineRoomData.championshipId;
+
+
+      await leaveOnlineRoom();
+
+
+      switchView('championship');
+
+
+      if(champId){
+
+        activeChampId=champId;
+
+        if(currentUser){
+
+          dbSet(
+            'users/'+currentUser.uid+'/activeChampionshipCode',
+            champId
+          ).catch(()=>{});
+
+        }
+
+        subscribeToChampionship(champId);
+
+      }
+
+    });
 
 
   document
@@ -11908,6 +12043,7 @@
 
         username:currentUser.username,
         avatar:getUserAvatarId(currentUser),
+        photoURL:currentUser.photoURL||null,
         elo:currentUser.elo,
         status:status,
         updatedAt:Date.now()
@@ -12051,7 +12187,7 @@
 
           return (
             '<div class="online-player-row">'+
-              '<span class="avatar-badge" style="width:28px;height:28px;">'+avatarSvgMarkup(p.avatar||'avatar1')+'</span>'+
+              '<span class="avatar-badge" style="width:28px;height:28px;">'+renderAvatarOrPhoto(p.photoURL,p.avatar||'avatar1')+'</span>'+
               '<div style="flex:1;min-width:0;">'+
                 '<div style="font-size:13px;font-weight:600;">'+escapeHtml(p.username||'?')+'</div>'+
                 '<div style="font-size:11.5px;color:var(--text-dim);">Elo '+(p.elo||1200)+' · '+statusLabel+'</div>'+
@@ -13822,6 +13958,9 @@
 
 
     roundsEl.innerHTML=
+
+      '<div class="champ-bracket-scroll">'+
+
       champ.rounds.map(round=>{
 
         const matchesHtml=
@@ -13839,28 +13978,66 @@
               currentUser && m.p2.uid===currentUser.uid;
 
 
+            const isLive=
+              !m.result && !!m.roomCode;
+
+            const isDone=
+              !!m.result;
+
+
             const canEnter=
-              !m.result && m.roomCode &&
-              (iAmP1 || iAmP2);
+              isLive && (iAmP1 || iAmP2);
+
+            const canWatch=
+              isLive && !iAmP1 && !iAmP2;
+
+
+            const statusBadge=
+              isDone
+                ? '<span class="champ-match-status done">Concluída</span>'
+                : isLive
+                  ? '<span class="champ-match-status live">● Em andamento</span>'
+                  : '<span class="champ-match-status">Aguardando</span>';
+
+
+            let actionHtml='';
+
+            if(canEnter){
+
+              actionHtml=
+                '<button class="btn primary" data-champ-room="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">Entrar na partida</button>';
+
+            }else if(canWatch){
+
+              actionHtml=
+                '<button class="btn ghost" data-champ-watch="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">👁 Assistir</button>';
+
+            }
 
 
             return (
-              '<div class="champ-match">'+
+              '<div class="champ-match '+(isLive?'is-live':'')+(isDone?'is-done':'')+'">'+
+
+                '<div class="champ-match-top">'+
+                  statusBadge+
+                '</div>'+
+
                 '<span class="side '+(p1Winner?'winner':'')+'">'+
                   escapeHtml(m.p1.username)+
                   (m.p1.isBot?' 🤖':'')+
                   ' <small style="color:var(--text-dim);">('+m.p1.elo+')</small>'+
                 '</span>'+
+
                 '<span class="vs">vs</span>'+
+
                 '<span class="side '+(p2Winner?'winner':'')+'">'+
                   escapeHtml(m.p2.username)+
                   (m.p2.isBot?' 🤖':'')+
                   ' <small style="color:var(--text-dim);">('+m.p2.elo+')</small>'+
                 '</span>'+
-                (canEnter
-                  ? '<button class="btn primary" data-champ-room="'+m.roomCode+'" style="padding:5px 12px;font-size:12px;">Entrar na partida</button>'
-                  : (m.result ? '' : '<small style="color:var(--text-dim);">aguardando</small>')
-                )+
+
+                (actionHtml ? '<div style="margin-top:4px;">'+actionHtml+'</div>' : '')+
+
               '</div>'
             );
 
@@ -13868,13 +14045,15 @@
 
 
         return (
-          '<div>'+
+          '<div class="champ-round-col">'+
             '<div class="champ-round-title">Rodada '+round.roundNumber+'</div>'+
             matchesHtml+
           '</div>'
         );
 
-      }).join('');
+      }).join('')+
+
+      '</div>';
 
 
       roundsEl.querySelectorAll('[data-champ-room]').forEach(btn=>{
@@ -13890,6 +14069,21 @@
           onlineRole=null;
 
           subscribeOnlineRoom(code);
+
+        });
+
+      });
+
+
+      roundsEl.querySelectorAll('[data-champ-watch]').forEach(btn=>{
+
+        btn.addEventListener('click',()=>{
+
+          const code=btn.dataset.champWatch;
+
+          switchView('online');
+
+          startSpectateRoom(code);
 
         });
 
