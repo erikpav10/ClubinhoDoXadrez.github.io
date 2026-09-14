@@ -604,6 +604,70 @@
     .champ-round-col{ width:220px; }
   }
 
+  /* ===== Árvore de chaveamento (estilo "chave olímpica") ===== */
+
+  .champ-tree{
+    display:flex;
+    align-items:stretch;
+    overflow-x:auto;
+    padding:6px 20px 20px 4px;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .champ-tree-round{
+    display:flex;
+    flex-direction:column;
+    justify-content:space-around;
+    flex:0 0 auto;
+    min-width:200px;
+  }
+
+  .champ-tree-round + .champ-tree-round{
+    margin-left:30px;
+  }
+
+  .champ-tree-round-label{
+    text-align:center;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--gold);
+    margin-bottom:12px;
+  }
+
+  .champ-tree-pair{
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-around;
+    gap:10px;
+    padding-right:30px;
+    margin:16px 0;
+  }
+
+  .champ-tree-pair.single{
+    padding-right:0;
+  }
+
+  .champ-tree-pair:not(.single)::after{
+    content:'';
+    position:absolute;
+    top:22%;
+    bottom:22%;
+    right:0;
+    width:30px;
+    border:2px solid var(--line);
+    border-left:none;
+    border-radius:0 10px 10px 0;
+  }
+
+  @media(max-width:600px){
+    .champ-tree-round{ min-width:170px; }
+    .champ-tree-round + .champ-tree-round{ margin-left:20px; }
+    .champ-tree-pair{ padding-right:20px; }
+    .champ-tree-pair:not(.single)::after{ width:20px; }
+  }
+
   .campaign-progress-bar{
     width:100%;
     height:10px;
@@ -14310,110 +14374,146 @@
 
     roundsEl.innerHTML=
 
-      '<div class="champ-bracket-scroll">'+
+      '<div class="champ-tree">'+
 
       champ.rounds.map(round=>{
 
-        const matchesHtml=
-          round.matches.map(m=>{
+        function renderMatchCard(m){
 
-            const p1Winner=m.result==='p1';
+          const p1Winner=m.result==='p1';
 
-            const p2Winner=m.result==='p2';
-
-
-            const iAmP1=
-              currentUser && m.p1.uid===currentUser.uid;
-
-            const iAmP2=
-              currentUser && m.p2.uid===currentUser.uid;
+          const p2Winner=m.result==='p2';
 
 
-            const canPlayBot=
-              m.vsBot && !m.result &&
-              currentUser && m.humanUid===currentUser.uid;
+          const iAmP1=
+            currentUser && m.p1.uid===currentUser.uid;
+
+          const iAmP2=
+            currentUser && m.p2.uid===currentUser.uid;
 
 
-            const isLive=
-              !m.result && (!!m.roomCode || m.vsBot);
-
-            const isDone=
-              !!m.result;
+          const canPlayBot=
+            m.vsBot && !m.result &&
+            currentUser && m.humanUid===currentUser.uid;
 
 
-            const canEnter=
-              isLive && !m.vsBot && (iAmP1 || iAmP2);
+          const isLive=
+            !m.result && (!!m.roomCode || m.vsBot);
 
-            const canWatch=
-              isLive && !m.vsBot && !iAmP1 && !iAmP2;
-
-
-            const statusBadge=
-              isDone
-                ? '<span class="champ-match-status done">Concluída</span>'
-                : isLive
-                  ? '<span class="champ-match-status live">● Em andamento</span>'
-                  : '<span class="champ-match-status">Aguardando</span>';
+          const isDone=
+            !!m.result;
 
 
-            let actionHtml='';
+          const canEnter=
+            isLive && !m.vsBot && (iAmP1 || iAmP2);
 
-            if(canPlayBot){
-
-              actionHtml=
-                '<button class="btn primary" data-champ-bot="'+m.matchId+'" style="padding:6px 12px;font-size:12px;width:100%;">🤖 Jogar contra o Bot</button>';
-
-            }else if(canEnter){
-
-              actionHtml=
-                '<button class="btn primary" data-champ-room="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">Entrar na partida</button>';
-
-            }else if(canWatch){
-
-              actionHtml=
-                '<button class="btn ghost" data-champ-watch="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">👁 Assistir</button>';
-
-            }else if(m.vsBot && !m.result){
-
-              actionHtml=
-                '<small style="color:var(--text-dim);">aguardando o jogador entrar</small>';
-
-            }
+          const canWatch=
+            isLive && !m.vsBot && !iAmP1 && !iAmP2;
 
 
-            return (
-              '<div class="champ-match '+(isLive?'is-live':'')+(isDone?'is-done':'')+'">'+
+          const statusBadge=
+            isDone
+              ? '<span class="champ-match-status done">Concluída</span>'
+              : isLive
+                ? '<span class="champ-match-status live">● Em andamento</span>'
+                : '<span class="champ-match-status">Aguardando</span>';
 
-                '<div class="champ-match-top">'+
-                  statusBadge+
-                '</div>'+
 
-                '<span class="side '+(p1Winner?'winner':'')+'">'+
-                  escapeHtml(m.p1.username)+
-                  (m.p1.isBot?' 🤖':'')+
-                  ' <small style="color:var(--text-dim);">('+m.p1.elo+')</small>'+
-                '</span>'+
+          let actionHtml='';
 
-                '<span class="vs">vs</span>'+
+          if(canPlayBot){
 
-                '<span class="side '+(p2Winner?'winner':'')+'">'+
-                  escapeHtml(m.p2.username)+
-                  (m.p2.isBot?' 🤖':'')+
-                  ' <small style="color:var(--text-dim);">('+m.p2.elo+')</small>'+
-                '</span>'+
+            actionHtml=
+              '<button class="btn primary" data-champ-bot="'+m.matchId+'" style="padding:6px 12px;font-size:12px;width:100%;">🤖 Jogar contra o Bot</button>';
 
-                (actionHtml ? '<div style="margin-top:4px;">'+actionHtml+'</div>' : '')+
+          }else if(canEnter){
 
-              '</div>'
-            );
+            actionHtml=
+              '<button class="btn primary" data-champ-room="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">Entrar na partida</button>';
 
-          }).join('');
+          }else if(canWatch){
+
+            actionHtml=
+              '<button class="btn ghost" data-champ-watch="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">👁 Assistir</button>';
+
+          }else if(m.vsBot && !m.result){
+
+            actionHtml=
+              '<small style="color:var(--text-dim);">aguardando o jogador entrar</small>';
+
+          }
+
+
+          return (
+            '<div class="champ-match '+(isLive?'is-live':'')+(isDone?'is-done':'')+'">'+
+
+              '<div class="champ-match-top">'+
+                statusBadge+
+              '</div>'+
+
+              '<span class="side '+(p1Winner?'winner':'')+'">'+
+                escapeHtml(m.p1.username)+
+                (m.p1.isBot?' 🤖':'')+
+                ' <small style="color:var(--text-dim);">('+m.p1.elo+')</small>'+
+              '</span>'+
+
+              '<span class="vs">vs</span>'+
+
+              '<span class="side '+(p2Winner?'winner':'')+'">'+
+                escapeHtml(m.p2.username)+
+                (m.p2.isBot?' 🤖':'')+
+                ' <small style="color:var(--text-dim);">('+m.p2.elo+')</small>'+
+              '</span>'+
+
+              (actionHtml ? '<div style="margin-top:4px;">'+actionHtml+'</div>' : '')+
+
+            '</div>'
+          );
+
+        }
+
+
+        /*
+          Agrupa os jogos da rodada em pares — cada par converge
+          para um único jogo na próxima rodada, formando a "árvore"
+          da chave olímpica. A rodada final (1 jogo) fica sozinha.
+        */
+
+        let pairsHtml='';
+
+        if(round.matches.length===1){
+
+          pairsHtml=
+            '<div class="champ-tree-pair single">'+
+              renderMatchCard(round.matches[0])+
+            '</div>';
+
+        }else{
+
+          for(let i=0;i<round.matches.length;i+=2){
+
+            pairsHtml+=
+              '<div class="champ-tree-pair">'+
+                renderMatchCard(round.matches[i])+
+                (round.matches[i+1] ? renderMatchCard(round.matches[i+1]) : '')+
+              '</div>';
+
+          }
+
+        }
 
 
         return (
-          '<div class="champ-round-col">'+
-            '<div class="champ-round-title">Rodada '+round.roundNumber+'</div>'+
-            matchesHtml+
+          '<div class="champ-tree-round">'+
+            '<div class="champ-tree-round-label">'+
+              (round.roundNumber===champ.totalRounds
+                ? 'Final'
+                : round.roundNumber===champ.totalRounds-1
+                  ? 'Semifinal'
+                  : 'Rodada '+round.roundNumber
+              )+
+            '</div>'+
+            pairsHtml+
           '</div>'
         );
 
