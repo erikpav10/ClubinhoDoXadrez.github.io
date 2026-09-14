@@ -544,6 +544,32 @@
     color:var(--gold);
   }
 
+  .champ-my-match{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    background:rgba(201,162,75,.08);
+    border:1px solid var(--gold);
+    border-radius:var(--radius);
+    padding:14px 16px;
+    margin-top:12px;
+  }
+
+  .champ-my-match .label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--gold);
+    display:block;
+    margin-bottom:4px;
+  }
+
+  .champ-my-match .versus{
+    font-size:14px;
+  }
+
   .champ-match .side{
     display:flex;
     align-items:center;
@@ -4295,9 +4321,9 @@
           <div class="field">
             <label>Tamanho do campeonato</label>
             <select id="champLobbySize">
-              <option value="4">4 jogadores</option>
+              <option value="6">6 jogadores</option>
               <option value="8" selected>8 jogadores</option>
-              <option value="16">16 jogadores</option>
+              <option value="10">10 jogadores</option>
             </select>
           </div>
 
@@ -4351,6 +4377,8 @@
       </div>
 
       <p id="champBracketStatus" style="color:var(--text-dim);font-size:13px;margin:8px 0 0;"></p>
+
+      <div id="champMyMatchBanner" style="display:none;"></div>
 
       <div id="champBracketRounds" style="margin-top:14px;display:flex;flex-direction:column;gap:18px;"></div>
 
@@ -4528,6 +4556,15 @@
         Fechar
       </button>
 
+
+      <button
+        class="btn ghost"
+        id="btnResultBackToChampionship"
+        style="display:none;"
+      >
+        🏆 Voltar ao Campeonato
+      </button>
+
     </div>
 
   </div>
@@ -4682,6 +4719,8 @@
   let currentUser=null;
 
   let currentFirebaseUser=null;
+
+  let championshipBotContext=null;
 
   let game=new Chess();
 
@@ -5365,8 +5404,17 @@
 
       if(spectateMode){
         /* mantém o modo espectador ativo ao reabrir a aba */
-      }else if(onlineRoomCode && onlineRoomData){
-        handleOnlineRoomUpdate(onlineRoomData);
+      }else if(onlineRoomCode){
+
+        if(onlineRoomData){
+          handleOnlineRoomUpdate(onlineRoomData);
+        }else{
+          /* já estamos entrando numa sala — evita o flash do lobby
+             enquanto os dados chegam do Firebase */
+          document.getElementById('onlineLobby').style.display='none';
+          showOnlineGameArea();
+        }
+
       }else{
         showOnlineLobby();
       }
@@ -6532,7 +6580,7 @@
     let eloData=null;
 
 
-    if(currentUser){
+    if(currentUser && !championshipBotContext){
 
       eloData=
         await applyEloUpdate(
@@ -6549,6 +6597,35 @@
       sub,
       eloData
     );
+
+
+    if(championshipBotContext){
+
+      const ctx=championshipBotContext;
+
+      championshipBotContext=null;
+
+
+      const backBtn=
+        document.getElementById('btnResultBackToChampionship');
+
+      if(backBtn) backBtn.style.display='inline-block';
+
+
+      reportChampionshipBotMatchResult(
+        ctx.champId,
+        ctx.matchId,
+        result
+      );
+
+    }else{
+
+      const backBtn=
+        document.getElementById('btnResultBackToChampionship');
+
+      if(backBtn) backBtn.style.display='none';
+
+    }
 
   }
 
@@ -8202,6 +8279,23 @@
       'click',
       closeResultModal
     );
+
+
+  document
+    .getElementById('btnResultBackToChampionship')
+    .addEventListener('click',()=>{
+
+      closeResultModal();
+
+      switchView('championship');
+
+      if(activeChampId){
+
+        subscribeToChampionship(activeChampId);
+
+      }
+
+    });
 
 
   /* =========================================================
@@ -11301,9 +11395,6 @@
       await leaveOnlineRoom();
 
 
-      switchView('championship');
-
-
       if(champId){
 
         activeChampId=champId;
@@ -11316,6 +11407,14 @@
           ).catch(()=>{});
 
         }
+
+      }
+
+
+      switchView('championship');
+
+
+      if(champId){
 
         subscribeToChampionship(champId);
 
@@ -13533,9 +13632,19 @@
           : 1200;
 
 
+      /*
+        Chaves de eliminação simples precisam de um número de
+        vagas que seja potência de 2 (6→8, 8→8, 10→16). As vagas
+        que sobrarem são preenchidas com Bots.
+      */
+
+      const bracketSize=
+        nextPowerOfTwo(lobby.size);
+
+
       let botIndex=0;
 
-      while(participants.length<lobby.size){
+      while(participants.length<bracketSize){
 
         participants.push(makeBotEntry(botIndex,avgElo));
 
@@ -13570,7 +13679,7 @@
 
         currentRound:1,
 
-        totalRounds:Math.log2(lobby.size),
+        totalRounds:Math.log2(bracketSize),
 
         rounds:[{roundNumber:1,matches}],
 
@@ -13634,22 +13743,26 @@
 
     }else if(p1.isBot || p2.isBot){
 
+      /*
+        Humano contra Bot: NÃO sorteamos o resultado — a partida
+        é jogada de verdade, reaproveitando o mesmo motor de Bot
+        do modo "Jogar". O resultado só é preenchido quando o
+        jogador efetivamente terminar a partida (ver
+        reportChampionshipBotMatchResult).
+      */
+
       const human=p1.isBot?p2:p1;
 
       const bot=p1.isBot?p1:p2;
 
-      const expected=
-        championshipExpectedScore(human.elo,bot.elo);
+      match.vsBot=true;
 
-      const humanWins=Math.random()<expected;
+      match.humanUid=human.uid;
 
-      const winner=humanWins?human:bot;
+      match.humanSide=Math.random()<0.5?'w':'b';
 
-      match.result=(winner===p1)?'p1':'p2';
-
-      match.winnerUid=winner.uid;
-
-      match.winnerName=winner.username;
+      match.botDifficulty=
+        bot.elo<1300 ? 'easy' : bot.elo<1700 ? 'medium' : 'hard';
 
     }else{
 
@@ -13794,6 +13907,99 @@
   }
 
 
+  function startChampionshipBotMatch(champId,matchId,side,diff){
+
+    championshipBotContext={champId,matchId};
+
+    playerSide=side;
+
+    difficulty=diff;
+
+    startNewGame();
+
+    switchView('play');
+
+  }
+
+
+  async function reportChampionshipBotMatchResult(champId,matchId,humanResult){
+
+    try{
+
+      const champ=
+        await dbGet('championships/'+champId).catch(()=>null);
+
+      if(!champ || champ.status!=='in_progress') return;
+
+
+      const round=
+        champ.rounds[champ.rounds.length-1];
+
+      const match=
+        round.matches.find(m=>m.matchId===matchId);
+
+      if(!match || match.result) return;
+
+
+      const humanIsP1=
+        match.p1.uid===match.humanUid;
+
+      const human=humanIsP1 ? match.p1 : match.p2;
+
+      const bot=humanIsP1 ? match.p2 : match.p1;
+
+
+      let humanAdvances;
+
+      if(humanResult===1){
+
+        humanAdvances=true;
+
+      }else if(humanResult===0){
+
+        humanAdvances=false;
+
+      }else{
+
+        /* empate: decide por Elo maior */
+
+        humanAdvances=human.elo>=bot.elo;
+
+      }
+
+
+      const winner=humanAdvances ? human : bot;
+
+
+      const matchPath=
+        'championships/'+champId+'/rounds/'+
+        (champ.rounds.length-1)+
+        '/matches/'+
+        round.matches.indexOf(match);
+
+
+      await dbUpdate(matchPath,{
+
+        result:winner===match.p1?'p1':'p2',
+
+        winnerUid:winner.uid,
+
+        winnerName:winner.username
+
+      });
+
+
+      await tryAdvanceChampionshipRound(champId);
+
+    }catch(error){
+
+      console.error('Erro ao reportar resultado da partida contra Bot no campeonato:',error);
+
+    }
+
+  }
+
+
   async function tryAdvanceChampionshipRound(champId){
 
     try{
@@ -13921,6 +14127,148 @@
   }
 
 
+  function renderMyMatchBanner(champ){
+
+    const box=document.getElementById('champMyMatchBanner');
+
+    if(!box) return;
+
+
+    if(!currentUser || champ.status==='finished' || !champ.rounds.length){
+
+      box.style.display='none';
+
+      return;
+
+    }
+
+
+    const round=champ.rounds[champ.rounds.length-1];
+
+    const match=
+      round.matches.find(m=>
+
+        (m.p1 && m.p1.uid===currentUser.uid) ||
+        (m.p2 && m.p2.uid===currentUser.uid)
+
+      );
+
+
+    if(!match){
+
+      box.style.display='none';
+
+      return;
+
+    }
+
+
+    const iAmP1=match.p1.uid===currentUser.uid;
+
+    const opponent=iAmP1 ? match.p2 : match.p1;
+
+
+    if(match.result){
+
+      const iWon=
+        (match.result==='p1' && iAmP1) ||
+        (match.result==='p2' && !iAmP1);
+
+      box.style.display='block';
+
+      box.innerHTML=
+        '<div class="champ-my-match">'+
+          '<div>'+
+            '<span class="label">Sua partida — Rodada '+round.roundNumber+'</span>'+
+            '<span class="versus">'+
+              (iWon
+                ? '✅ Você venceu contra '+escapeHtml(opponent.username)+'. Aguardando a próxima rodada...'
+                : '❌ Você foi eliminado por '+escapeHtml(opponent.username)+'. Acompanhe o restante do campeonato abaixo.')+
+            '</span>'+
+          '</div>'+
+        '</div>';
+
+      return;
+
+    }
+
+
+    box.style.display='block';
+
+
+    let actionBtn='';
+
+    if(match.vsBot){
+
+      actionBtn=
+        '<button class="btn primary" data-mymatch-bot="'+match.matchId+'">🤖 Jogar contra o Bot</button>';
+
+    }else if(match.roomCode){
+
+      actionBtn=
+        '<button class="btn primary" data-mymatch-room="'+match.roomCode+'">Entrar na partida</button>';
+
+    }else{
+
+      actionBtn=
+        '<small style="color:var(--text-dim);">preparando a sala...</small>';
+
+    }
+
+
+    box.innerHTML=
+      '<div class="champ-my-match">'+
+        '<div>'+
+          '<span class="label">Sua partida — Rodada '+round.roundNumber+'</span>'+
+          '<span class="versus">Contra '+escapeHtml(opponent.username)+(opponent.isBot?' 🤖':'')+' <small style="color:var(--text-dim);">('+opponent.elo+')</small></span>'+
+        '</div>'+
+        actionBtn+
+      '</div>';
+
+
+    const botBtn=box.querySelector('[data-mymatch-bot]');
+
+    if(botBtn){
+
+      botBtn.addEventListener('click',()=>{
+
+        startChampionshipBotMatch(
+          champ.code,
+          match.matchId,
+          match.humanSide,
+          match.botDifficulty
+        );
+
+      });
+
+    }
+
+
+    const roomBtn=box.querySelector('[data-mymatch-room]');
+
+    if(roomBtn){
+
+      roomBtn.addEventListener('click',()=>{
+
+        const code=roomBtn.dataset.mymatchRoom;
+
+        onlineRoomCode=code;
+
+        onlineRoomData=null;
+
+        onlineRole=null;
+
+        subscribeOnlineRoom(code);
+
+        switchView('online');
+
+      });
+
+    }
+
+  }
+
+
   function renderChampionshipBracket(champ){
 
     const card=document.getElementById('champBracketCard');
@@ -13957,6 +14305,9 @@
         : 'Rodada '+champ.currentRound+' de '+champ.totalRounds+' em andamento.';
 
 
+    renderMyMatchBanner(champ);
+
+
     roundsEl.innerHTML=
 
       '<div class="champ-bracket-scroll">'+
@@ -13978,18 +14329,23 @@
               currentUser && m.p2.uid===currentUser.uid;
 
 
+            const canPlayBot=
+              m.vsBot && !m.result &&
+              currentUser && m.humanUid===currentUser.uid;
+
+
             const isLive=
-              !m.result && !!m.roomCode;
+              !m.result && (!!m.roomCode || m.vsBot);
 
             const isDone=
               !!m.result;
 
 
             const canEnter=
-              isLive && (iAmP1 || iAmP2);
+              isLive && !m.vsBot && (iAmP1 || iAmP2);
 
             const canWatch=
-              isLive && !iAmP1 && !iAmP2;
+              isLive && !m.vsBot && !iAmP1 && !iAmP2;
 
 
             const statusBadge=
@@ -14002,7 +14358,12 @@
 
             let actionHtml='';
 
-            if(canEnter){
+            if(canPlayBot){
+
+              actionHtml=
+                '<button class="btn primary" data-champ-bot="'+m.matchId+'" style="padding:6px 12px;font-size:12px;width:100%;">🤖 Jogar contra o Bot</button>';
+
+            }else if(canEnter){
 
               actionHtml=
                 '<button class="btn primary" data-champ-room="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">Entrar na partida</button>';
@@ -14011,6 +14372,11 @@
 
               actionHtml=
                 '<button class="btn ghost" data-champ-watch="'+m.roomCode+'" style="padding:6px 12px;font-size:12px;width:100%;">👁 Assistir</button>';
+
+            }else if(m.vsBot && !m.result){
+
+              actionHtml=
+                '<small style="color:var(--text-dim);">aguardando o jogador entrar</small>';
 
             }
 
@@ -14062,13 +14428,15 @@
 
           const code=btn.dataset.champRoom;
 
-          switchView('online');
-
           onlineRoomCode=code;
+
+          onlineRoomData=null;
 
           onlineRole=null;
 
           subscribeOnlineRoom(code);
+
+          switchView('online');
 
         });
 
@@ -14081,9 +14449,39 @@
 
           const code=btn.dataset.champWatch;
 
+          startSpectateRoom(code);
+
           switchView('online');
 
-          startSpectateRoom(code);
+        });
+
+      });
+
+
+      roundsEl.querySelectorAll('[data-champ-bot]').forEach(btn=>{
+
+        btn.addEventListener('click',()=>{
+
+          const matchId=btn.dataset.champBot;
+
+          let foundMatch=null;
+
+          for(const r of champ.rounds){
+
+            const found=r.matches.find(mm=>mm.matchId===matchId);
+
+            if(found){ foundMatch=found; break; }
+
+          }
+
+          if(!foundMatch) return;
+
+          startChampionshipBotMatch(
+            champ.code,
+            matchId,
+            foundMatch.humanSide,
+            foundMatch.botDifficulty
+          );
 
         });
 
