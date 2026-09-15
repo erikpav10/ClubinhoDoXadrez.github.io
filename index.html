@@ -3064,6 +3064,52 @@
 
     </symbol>
 
+
+    <!-- ===== Conjunto "Minimalista" ===== -->
+
+    <symbol id="m-pawn" viewBox="0 0 100 100">
+      <path d="M28 90 L72 90 L64 62 L36 62 Z"/>
+      <circle cx="50" cy="42" r="18"/>
+    </symbol>
+
+    <symbol id="m-knight" viewBox="0 0 100 100">
+      <path d="M28 90 L72 90 L64 62 L36 62 Z"/>
+      <circle cx="50" cy="42" r="18"/>
+      <path d="M62 30 L84 39 L64 49 Z"/>
+    </symbol>
+
+    <symbol id="m-bishop" viewBox="0 0 100 100">
+      <path d="M28 90 L72 90 L64 62 L36 62 Z"/>
+      <circle cx="50" cy="48" r="16"/>
+      <ellipse cx="50" cy="23" rx="10" ry="17"/>
+      <circle cx="50" cy="5" r="5.5"/>
+    </symbol>
+
+    <symbol id="m-rook" viewBox="0 0 100 100">
+      <path d="M28 90 L72 90 L68 60 L32 60 Z"/>
+      <rect x="32" y="34" width="36" height="26"/>
+      <rect x="29" y="20" width="11" height="17"/>
+      <rect x="44.5" y="20" width="11" height="17"/>
+      <rect x="60" y="20" width="11" height="17"/>
+    </symbol>
+
+    <symbol id="m-queen" viewBox="0 0 100 100">
+      <path d="M28 90 L72 90 L64 62 L36 62 Z"/>
+      <circle cx="50" cy="46" r="16"/>
+      <circle cx="24" cy="24" r="7.5"/>
+      <circle cx="37.5" cy="12" r="7.5"/>
+      <circle cx="50" cy="7" r="7.5"/>
+      <circle cx="62.5" cy="12" r="7.5"/>
+      <circle cx="76" cy="24" r="7.5"/>
+    </symbol>
+
+    <symbol id="m-king" viewBox="0 0 100 100">
+      <path d="M28 90 L72 90 L64 62 L36 62 Z"/>
+      <circle cx="50" cy="48" r="16"/>
+      <rect x="45" y="6" width="10" height="27"/>
+      <rect x="36.5" y="14.5" width="27" height="10"/>
+    </symbol>
+
   </defs>
 
 </svg>
@@ -4437,8 +4483,15 @@
 
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">Chaveamento do <span>Campeonato</span></h3>
-        <button class="btn ghost" id="btnNewChampionship" style="display:none;">Novo campeonato</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn ghost" id="btnLeaveChampionship">Sair do campeonato</button>
+          <button class="btn ghost" id="btnNewChampionship" style="display:none;">Novo campeonato</button>
+        </div>
       </div>
+
+      <p style="color:var(--text-dim);font-size:11.5px;margin:6px 0 0;">
+        Guarde o código <strong id="champBracketCodeLabel"></strong> — você pode voltar a acompanhar este campeonato a qualquer momento, mesmo depois de sair.
+      </p>
 
       <p id="champBracketStatus" style="color:var(--text-dim);font-size:13px;margin:8px 0 0;"></p>
 
@@ -4958,6 +5011,157 @@
   };
 
 
+  /*
+    Conjuntos de peças disponíveis para personalização no Perfil.
+    'classic' e 'minimal' usam símbolos SVG (<use>); 'symbols'
+    desenha os glifos unicode de xadrez (♔♕♖♗♘♙) como texto.
+  */
+
+  const PIECE_SETS={
+
+    classic:{
+      label:'Clássico',
+      kind:'svg',
+      symbols:{p:'p-pawn',n:'p-knight',b:'p-bishop',r:'p-rook',q:'p-queen',k:'p-king'}
+    },
+
+    minimal:{
+      label:'Minimalista',
+      kind:'svg',
+      symbols:{p:'m-pawn',n:'m-knight',b:'m-bishop',r:'m-rook',q:'m-queen',k:'m-king'}
+    },
+
+    symbols:{
+      label:'Símbolos',
+      kind:'glyph',
+      glyphs:{
+        w:{p:'♙',n:'♘',b:'♗',r:'♖',q:'♕',k:'♔'},
+        b:{p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'}
+      }
+    }
+
+  };
+
+  const DEFAULT_PIECE_SET='classic';
+
+
+  /*
+    Temas de tabuleiro disponíveis para personalização no Perfil.
+    Aplicados trocando as variáveis CSS --board-light/--board-dark
+    na raiz da página.
+  */
+
+  const BOARD_THEMES={
+
+    classic:{label:'Clássico',light:'#c3bda8',dark:'#3f4a3f'},
+
+    wood:{label:'Madeira',light:'#e8d3ab',dark:'#8b5a2b'},
+
+    blue:{label:'Azul',light:'#dbe6ee',dark:'#3d5a78'}
+
+  };
+
+  const DEFAULT_BOARD_THEME='classic';
+
+
+  let currentPieceSet=DEFAULT_PIECE_SET;
+
+  let currentBoardTheme=DEFAULT_BOARD_THEME;
+
+
+  function applyBoardTheme(themeId){
+
+    const theme=
+      BOARD_THEMES[themeId] || BOARD_THEMES[DEFAULT_BOARD_THEME];
+
+    document.documentElement.style.setProperty('--board-light',theme.light);
+
+    document.documentElement.style.setProperty('--board-dark',theme.dark);
+
+  }
+
+
+  function applyUserBoardPrefs(user){
+
+    currentPieceSet=
+      (user && user.pieceSet && PIECE_SETS[user.pieceSet])
+        ? user.pieceSet
+        : DEFAULT_PIECE_SET;
+
+    currentBoardTheme=
+      (user && user.boardTheme && BOARD_THEMES[user.boardTheme])
+        ? user.boardTheme
+        : DEFAULT_BOARD_THEME;
+
+    applyBoardTheme(currentBoardTheme);
+
+  }
+
+
+  async function selectPieceSet(setId){
+
+    if(!PIECE_SETS[setId]) return;
+
+    currentPieceSet=setId;
+
+    renderBoardPrefsPicker();
+
+    if(gameActive) renderBoard();
+
+    if(onlineRoomData) renderOnlineBoard();
+
+    if(campaignCurrentPhase) renderCampaignBoard();
+
+
+    if(currentUser && currentFirebaseUser){
+
+      currentUser.pieceSet=setId;
+
+      try{
+
+        await dbUpdate('users/'+currentUser.uid,{pieceSet:setId});
+
+      }catch(error){
+
+        console.error('Erro ao salvar conjunto de peças:',error);
+
+      }
+
+    }
+
+  }
+
+
+  async function selectBoardTheme(themeId){
+
+    if(!BOARD_THEMES[themeId]) return;
+
+    currentBoardTheme=themeId;
+
+    applyBoardTheme(themeId);
+
+    renderBoardPrefsPicker();
+
+
+    if(currentUser && currentFirebaseUser){
+
+      currentUser.boardTheme=themeId;
+
+      try{
+
+        await dbUpdate('users/'+currentUser.uid,{boardTheme:themeId});
+
+      }catch(error){
+
+        console.error('Erro ao salvar tema do tabuleiro:',error);
+
+      }
+
+    }
+
+  }
+
+
   const SVG_NS=
     'http://www.w3.org/2000/svg';
 
@@ -5353,6 +5557,39 @@
     );
 
 
+    const setDef=
+      PIECE_SETS[currentPieceSet] || PIECE_SETS[DEFAULT_PIECE_SET];
+
+
+    if(setDef.kind==='glyph'){
+
+      const text=
+        document.createElementNS(SVG_NS,'text');
+
+      text.setAttribute('x','50');
+
+      text.setAttribute('y','80');
+
+      text.setAttribute('text-anchor','middle');
+
+      text.setAttribute('font-size','82');
+
+      text.setAttribute('font-family','"Segoe UI Symbol","Noto Sans Symbols",serif');
+
+      text.textContent=
+        setDef.glyphs[color][type];
+
+      svg.appendChild(text);
+
+      return svg;
+
+    }
+
+
+    const symbolId=
+      setDef.symbols[type];
+
+
     const use=
       document.createElementNS(
         SVG_NS,
@@ -5363,13 +5600,13 @@
     use.setAttributeNS(
       XLINK_NS,
       'href',
-      '#'+PIECE_SYMBOL[type]
+      '#'+symbolId
     );
 
 
     use.setAttribute(
       'href',
-      '#'+PIECE_SYMBOL[type]
+      '#'+symbolId
     );
 
 
@@ -13511,9 +13748,37 @@
 
       if(lobby.status!=='lobby'){
 
-        errBox.textContent='Esse campeonato já começou ou foi encerrado.';
+        /*
+          O campeonato já começou (ou terminou). Só deixamos a
+          pessoa voltar a acompanhar se ela já fazia parte dele
+          originalmente — não dá pra entrar como jogador novo no
+          meio de uma chave já montada.
+        */
 
-        errBox.style.display='block';
+        const wasParticipant=
+          lobby.participants && lobby.participants[currentUser.uid];
+
+        if(!wasParticipant){
+
+          errBox.textContent='Esse campeonato já começou e você não fazia parte dele.';
+
+          errBox.style.display='block';
+
+          return;
+
+        }
+
+
+        activeChampId=code;
+
+        await dbSet(
+          'users/'+currentUser.uid+'/activeChampionshipCode',
+          code
+        ).catch(()=>{});
+
+        input.value='';
+
+        subscribeToChampionship(code);
 
         return;
 
@@ -14363,6 +14628,12 @@
     card.style.display='block';
 
 
+    const codeLabel=
+      document.getElementById('champBracketCodeLabel');
+
+    if(codeLabel) codeLabel.textContent=champ.code||'';
+
+
     statusEl.textContent=
       champ.status==='finished'
         ? 'Campeonato encerrado.'
@@ -14823,23 +15094,47 @@
     });
 
 
+  async function exitChampionshipView(){
+
+    detachChampionshipSubscription();
+
+    activeChampId=null;
+
+    if(currentUser){
+
+      await dbRemove(
+        'users/'+currentUser.uid+'/activeChampionshipCode'
+      ).catch(()=>{});
+
+    }
+
+    showChampNoLobby();
+
+  }
+
+
   document
     .getElementById('btnNewChampionship')
+    .addEventListener('click',exitChampionshipView);
+
+
+  document
+    .getElementById('btnLeaveChampionship')
     .addEventListener('click',async()=>{
 
-      detachChampionshipSubscription();
+      const code=
+        champCurrentData && champCurrentData.code;
 
-      activeChampId=null;
 
-      if(currentUser){
+      const msg=
+        code
+          ? 'Sair deste campeonato? Você pode voltar a qualquer momento entrando com o código '+code+'.'
+          : 'Sair deste campeonato?';
 
-        await dbRemove(
-          'users/'+currentUser.uid+'/activeChampionshipCode'
-        ).catch(()=>{});
+      if(!confirm(msg)) return;
 
-      }
 
-      showChampNoLobby();
+      await exitChampionshipView();
 
     });
 
