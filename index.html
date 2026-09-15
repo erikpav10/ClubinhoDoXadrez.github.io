@@ -863,6 +863,80 @@
   }
 
 
+  .theme-swatch{
+    width:66px;
+    cursor:pointer;
+    border:2px solid transparent;
+    border-radius:6px;
+    padding:5px;
+    text-align:center;
+    background:var(--bg-elevated);
+    transition:.15s;
+  }
+
+  .theme-swatch:hover{
+    transform:translateY(-2px);
+  }
+
+  .theme-swatch.selected{
+    border-color:var(--gold);
+  }
+
+  .theme-swatch .mini-board{
+    width:52px;
+    height:52px;
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    grid-template-rows:repeat(4,1fr);
+    border-radius:4px;
+    overflow:hidden;
+    margin:0 auto 6px;
+  }
+
+  .theme-swatch small{
+    font-size:10.5px;
+    color:var(--text-dim);
+  }
+
+  .theme-swatch.selected small{
+    color:var(--gold);
+  }
+
+  .pieceset-option{
+    width:66px;
+    cursor:pointer;
+    border:2px solid transparent;
+    border-radius:6px;
+    padding:6px 4px;
+    text-align:center;
+    background:var(--bg-elevated);
+    transition:.15s;
+  }
+
+  .pieceset-option:hover{
+    transform:translateY(-2px);
+  }
+
+  .pieceset-option.selected{
+    border-color:var(--gold);
+  }
+
+  .pieceset-option .preview-piece{
+    width:40px;
+    height:40px;
+    margin:0 auto 6px;
+  }
+
+  .pieceset-option small{
+    font-size:10.5px;
+    color:var(--text-dim);
+  }
+
+  .pieceset-option.selected small{
+    color:var(--gold);
+  }
+
+
   .rank-avatar{
 
     display:flex;
@@ -4212,6 +4286,25 @@
       </div>
 
 
+      <div class="card" style="margin-top:20px;">
+
+        <h3>🎨 Personalização</h3>
+
+        <p style="color:var(--text-dim);font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em;">
+          Tabuleiro
+        </p>
+
+        <div id="boardThemePicker" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;"></div>
+
+        <p style="color:var(--text-dim);font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em;">
+          Peças
+        </p>
+
+        <div id="pieceSetPicker" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+
+      </div>
+
+
       <button
         class="btn ghost"
         style="margin-top:20px;"
@@ -4434,6 +4527,15 @@
               <option value="6">6 jogadores</option>
               <option value="8" selected>8 jogadores</option>
               <option value="10">10 jogadores</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Tempo por partida</label>
+            <select id="champLobbyTime">
+              <option value="300">5 minutos</option>
+              <option value="420">7 minutos</option>
+              <option value="600" selected>10 minutos</option>
             </select>
           </div>
 
@@ -5533,7 +5635,8 @@
 
   function makePieceSVG(
     color,
-    type
+    type,
+    overrideSetId
   ){
 
     const svg=
@@ -5558,7 +5661,7 @@
 
 
     const setDef=
-      PIECE_SETS[currentPieceSet] || PIECE_SETS[DEFAULT_PIECE_SET];
+      PIECE_SETS[overrideSetId||currentPieceSet] || PIECE_SETS[DEFAULT_PIECE_SET];
 
 
     if(setDef.kind==='glyph'){
@@ -9185,6 +9288,8 @@
 
   function afterLogin(){
 
+    applyUserBoardPrefs(currentUser);
+
     renderAccountBox();
 
     renderProfile();
@@ -9348,6 +9453,103 @@
   }
 
 
+  function renderBoardPrefsPicker(){
+
+    if(!currentUser) return;
+
+
+    const boardBox=
+      document.getElementById('boardThemePicker');
+
+    if(boardBox){
+
+      boardBox.innerHTML=
+        Object.keys(BOARD_THEMES).map(id=>{
+
+          const theme=BOARD_THEMES[id];
+
+          let squares='';
+
+          for(let i=0;i<16;i++){
+
+            const row=Math.floor(i/4);
+
+            const col=i%4;
+
+            const isLight=(row+col)%2===0;
+
+            squares+=
+              '<div style="background:'+(isLight?theme.light:theme.dark)+';"></div>';
+
+          }
+
+          return (
+            '<button type="button" class="theme-swatch'+
+            (id===currentBoardTheme?' selected':'')+
+            '" data-board-theme="'+id+'">'+
+              '<div class="mini-board">'+squares+'</div>'+
+              '<small>'+theme.label+'</small>'+
+            '</button>'
+          );
+
+        }).join('');
+
+
+      boardBox.querySelectorAll('[data-board-theme]').forEach(btn=>{
+
+        btn.addEventListener('click',()=>
+          selectBoardTheme(btn.dataset.boardTheme)
+        );
+
+      });
+
+    }
+
+
+    const pieceBox=
+      document.getElementById('pieceSetPicker');
+
+    if(pieceBox){
+
+      pieceBox.innerHTML=
+        Object.keys(PIECE_SETS).map(id=>{
+
+          const def=PIECE_SETS[id];
+
+          return (
+            '<button type="button" class="pieceset-option'+
+            (id===currentPieceSet?' selected':'')+
+            '" data-piece-set="'+id+'">'+
+              '<span class="preview-piece" data-preview-for="'+id+'"></span>'+
+              '<small>'+def.label+'</small>'+
+            '</button>'
+          );
+
+        }).join('');
+
+
+      pieceBox.querySelectorAll('[data-preview-for]').forEach(span=>{
+
+        span.appendChild(
+          makePieceSVG('w','k',span.dataset.previewFor)
+        );
+
+      });
+
+
+      pieceBox.querySelectorAll('[data-piece-set]').forEach(btn=>{
+
+        btn.addEventListener('click',()=>
+          selectPieceSet(btn.dataset.pieceSet)
+        );
+
+      });
+
+    }
+
+  }
+
+
   async function selectAvatar(avatarId){
 
     if(
@@ -9480,6 +9682,8 @@
 
 
     renderAvatarPicker();
+
+    renderBoardPrefsPicker();
 
 
     document
@@ -13359,6 +13563,9 @@
           }
 
 
+          applyUserBoardPrefs(currentUser);
+
+
           renderAccountBox();
 
           renderProfile();
@@ -13612,6 +13819,9 @@
       const size=
         Number(document.getElementById('champLobbySize').value)||8;
 
+      const timeControl=
+        Number(document.getElementById('champLobbyTime').value)||600;
+
 
       let code=null;
 
@@ -13645,6 +13855,8 @@
         hostUsername:currentUser.username,
 
         size,
+
+        timeControl,
 
         status:'lobby',
 
@@ -14032,7 +14244,7 @@
   }
 
 
-  async function buildChampionshipMatch(p1,p2,roundNumber,matchIndex,champId){
+  async function buildChampionshipMatch(p1,p2,roundNumber,matchIndex,champId,timeControlSeconds){
 
     const matchId=
       'r'+roundNumber+'m'+matchIndex;
@@ -14236,7 +14448,7 @@
   }
 
 
-  function startChampionshipBotMatch(champId,matchId,side,diff){
+  function startChampionshipBotMatch(champId,matchId,side,diff,timeControlSeconds){
 
     championshipBotContext={champId,matchId};
 
@@ -14245,6 +14457,15 @@
     difficulty=diff;
 
     startNewGame();
+
+    const secs=
+      Number(timeControlSeconds)||600;
+
+    playerClockSeconds=secs;
+
+    botClockSeconds=secs;
+
+    updateClockDisplay();
 
     switchView('play');
 
@@ -14565,7 +14786,8 @@
           champ.code,
           match.matchId,
           match.humanSide,
-          match.botDifficulty
+          match.botDifficulty,
+          champ.timeControl
         );
 
       });
@@ -14851,7 +15073,8 @@
             champ.code,
             matchId,
             foundMatch.humanSide,
-            foundMatch.botDifficulty
+            foundMatch.botDifficulty,
+            champ.timeControl
           );
 
         });
