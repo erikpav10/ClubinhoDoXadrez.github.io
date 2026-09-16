@@ -3445,6 +3445,16 @@
           </div>
 
 
+          <div class="field">
+            <label>Tempo de partida</label>
+            <select id="botGameTime">
+              <option value="300">5 minutos</option>
+              <option value="480">8 minutos</option>
+              <option value="600" selected>10 minutos</option>
+            </select>
+          </div>
+
+
           <div class="actions-row">
 
             <button
@@ -3544,6 +3554,21 @@
 
       <div class="board-wrap">
 
+        <div class="clocks" id="onlineClockWrap" style="display:none;">
+
+          <div class="clock" id="onlineTopClockBox">
+            <span class="clock-label" id="onlineTopClockLabel">Adversário</span>
+            <span class="clock-time" id="onlineTopClock">--:--</span>
+          </div>
+
+          <div class="clock" id="onlineBottomClockBox">
+            <span class="clock-label" id="onlineBottomClockLabel">Você</span>
+            <span class="clock-time" id="onlineBottomClock">--:--</span>
+          </div>
+
+        </div>
+
+
         <div class="board-frame">
 
           <div
@@ -3620,6 +3645,16 @@
               <p style="color:var(--text-dim);font-size:13px;margin:0 0 14px;">
                 Gere um código e mande para a pessoa que vai jogar com você.
               </p>
+
+              <div class="field">
+                <label>Tempo de partida</label>
+                <select id="onlineRoomTime">
+                  <option value="0">Sem relógio</option>
+                  <option value="300">5 minutos</option>
+                  <option value="480">8 minutos</option>
+                  <option value="600" selected>10 minutos</option>
+                </select>
+              </div>
 
               <button
                 class="btn primary"
@@ -6548,9 +6583,14 @@
       Date.now();
 
 
-    playerClockSeconds=300;
+    const selectedTime=
+      Number(
+        (document.getElementById('botGameTime')||{}).value
+      )||300;
 
-    botClockSeconds=300;
+    playerClockSeconds=selectedTime;
+
+    botClockSeconds=selectedTime;
 
     lastClockUpdateAt=Date.now();
 
@@ -10520,37 +10560,87 @@
     if(!remaining) return;
 
 
-    const hostEl=document.getElementById('onlineHostClock');
+    /*
+      A caixa de baixo é sempre "eu" quando estou jogando (host
+      ou guest), e a de cima é o adversário. Quem está assistindo
+      (espectador) vê host embaixo e guest em cima, por padrão.
+    */
 
-    const guestEl=document.getElementById('onlineGuestClock');
+    const iAmGuest=onlineRole==='guest';
 
 
-    if(hostEl) hostEl.textContent=formatClockTime(remaining.hostSecs);
+    const bottomIsHost=!iAmGuest;
 
-    if(guestEl) guestEl.textContent=formatClockTime(remaining.guestSecs);
+
+    const bottomSecs=bottomIsHost?remaining.hostSecs:remaining.guestSecs;
+
+    const topSecs=bottomIsHost?remaining.guestSecs:remaining.hostSecs;
+
+    const bottomRole=bottomIsHost?'host':'guest';
+
+    const topRole=bottomIsHost?'guest':'host';
+
+
+    const topEl=document.getElementById('onlineTopClock');
+
+    const bottomEl=document.getElementById('onlineBottomClock');
+
+    const topBox=document.getElementById('onlineTopClockBox');
+
+    const bottomBox=document.getElementById('onlineBottomClockBox');
+
+    const topLabel=document.getElementById('onlineTopClockLabel');
+
+    const bottomLabel=document.getElementById('onlineBottomClockLabel');
+
+
+    if(topEl) topEl.textContent=formatClockTime(topSecs);
+
+    if(bottomEl) bottomEl.textContent=formatClockTime(bottomSecs);
+
+
+    if(topLabel){
+
+      topLabel.textContent=
+        topRole==='host' ? (room.hostUsername||'Host') : (room.guestUsername||'Convidado');
+
+    }
+
+    if(bottomLabel){
+
+      bottomLabel.textContent=
+        onlineRole
+          ? 'Você'
+          : (bottomRole==='host' ? (room.hostUsername||'Host') : (room.guestUsername||'Convidado'));
+
+    }
 
 
     const turnRole=
       onlineGame.turn()===room.hostSide ? 'host' : 'guest';
 
+    const isActive=room.status==='active';
 
-    if(hostEl){
-      hostEl.classList.toggle(
-        'ticking',
-        turnRole==='host' && room.status==='active'
-      );
+
+    if(topBox){
+
+      topBox.classList.toggle('active',isActive && turnRole===topRole);
+
+      topBox.classList.toggle('low',topSecs<=30);
+
     }
 
-    if(guestEl){
-      guestEl.classList.toggle(
-        'ticking',
-        turnRole==='guest' && room.status==='active'
-      );
+    if(bottomBox){
+
+      bottomBox.classList.toggle('active',isActive && turnRole===bottomRole);
+
+      bottomBox.classList.toggle('low',bottomSecs<=30);
+
     }
 
 
     if(
-      room.status==='active' &&
+      isActive &&
       (onlineRole==='host' || onlineRole==='guest') &&
       !spectateMode
     ){
@@ -10735,6 +10825,10 @@
         Math.random()<0.5 ? 'w' : 'b';
 
 
+      const timeControl=
+        Number(document.getElementById('onlineRoomTime').value)||0;
+
+
       const room={
 
         code,
@@ -10764,6 +10858,11 @@
 
         hostEloApplied:false,
         guestEloApplied:false,
+
+        timeControlSeconds:timeControl||null,
+        hostClockSeconds:timeControl||null,
+        guestClockSeconds:timeControl||null,
+        clockLastSyncAt:null,
 
         createdAt:Date.now(),
         updatedAt:Date.now()
@@ -10919,6 +11018,9 @@
             Number(currentUser.eloPvp||1200),
 
           status:'active',
+
+          clockLastSyncAt:
+            room.timeControlSeconds ? Date.now() : null,
 
           updatedAt:Date.now()
 
@@ -11872,7 +11974,9 @@
           ? 'Seu adversário desistiu.'
           : room.resultReason==='abandon'
             ? 'Seu adversário saiu da partida.'
-            : 'Xeque-mate a seu favor.';
+            : room.resultReason==='timeout'
+              ? 'O tempo do seu adversário acabou.'
+              : 'Xeque-mate a seu favor.';
 
     }else{
 
@@ -11885,7 +11989,9 @@
           ? 'Você desistiu da partida.'
           : room.resultReason==='abandon'
             ? 'Você saiu da partida.'
-            : 'Seu adversário deu xeque-mate.';
+            : room.resultReason==='timeout'
+              ? 'Seu tempo acabou.'
+              : 'Seu adversário deu xeque-mate.';
 
     }
 
