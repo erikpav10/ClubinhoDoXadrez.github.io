@@ -10367,6 +10367,10 @@
 
   let onlineLastSeenFen=null;
 
+  let onlineClockInterval=null;
+
+  let onlineTimeoutReported=false;
+
 
   const onlineBoardEl=
     document.getElementById(
@@ -10391,6 +10395,204 @@
     }
 
     return code;
+
+  }
+
+
+  /* =========================================================
+     RELÓGIO — SALAS ONLINE
+     ========================================================= */
+
+  /*
+    Salas normais (criadas via "Criar sala") continuam sem
+    relógio, como sempre foi. Só rodam relógio as salas que
+    nascem com "timeControlSeconds" definido — hoje isso só
+    acontece nas partidas humano×humano do Campeonato.
+  */
+
+
+  function formatClockTime(seconds){
+
+    const s=Math.max(0,Math.floor(seconds));
+
+    const m=Math.floor(s/60);
+
+    const r=s%60;
+
+    return String(m).padStart(2,'0')+':'+String(r).padStart(2,'0');
+
+  }
+
+
+  function getOnlineClockRemaining(){
+
+    const room=onlineRoomData;
+
+    if(!room || !room.timeControlSeconds) return null;
+
+
+    let hostSecs=
+      Number(room.hostClockSeconds ?? room.timeControlSeconds);
+
+    let guestSecs=
+      Number(room.guestClockSeconds ?? room.timeControlSeconds);
+
+
+    if(
+      room.status==='active' &&
+      room.clockLastSyncAt &&
+      room.guestUid
+    ){
+
+      const elapsed=
+        (Date.now()-room.clockLastSyncAt)/1000;
+
+      const turnRole=
+        onlineGame.turn()===room.hostSide ? 'host' : 'guest';
+
+      if(turnRole==='host'){
+        hostSecs=Math.max(0,hostSecs-elapsed);
+      }else{
+        guestSecs=Math.max(0,guestSecs-elapsed);
+      }
+
+    }
+
+
+    return {hostSecs,guestSecs};
+
+  }
+
+
+  async function reportOnlineTimeout(loserRole){
+
+    if(onlineTimeoutReported) return;
+
+    onlineTimeoutReported=true;
+
+
+    try{
+
+      const winnerRole=
+        loserRole==='host' ? 'guest' : 'host';
+
+      await dbUpdate('rooms/'+onlineRoomCode,{
+
+        result:winnerRole,
+        resultReason:'timeout',
+        status:'finished',
+        updatedAt:Date.now()
+
+      });
+
+    }catch(error){
+
+      console.error('Erro ao reportar tempo esgotado:',error);
+
+      onlineTimeoutReported=false;
+
+    }
+
+  }
+
+
+  function syncOnlineClockDisplay(){
+
+    const room=onlineRoomData;
+
+    const wrap=document.getElementById('onlineClockWrap');
+
+
+    if(!room || !room.timeControlSeconds){
+
+      if(wrap) wrap.style.display='none';
+
+      return;
+
+    }
+
+
+    if(wrap) wrap.style.display='flex';
+
+
+    const remaining=getOnlineClockRemaining();
+
+    if(!remaining) return;
+
+
+    const hostEl=document.getElementById('onlineHostClock');
+
+    const guestEl=document.getElementById('onlineGuestClock');
+
+
+    if(hostEl) hostEl.textContent=formatClockTime(remaining.hostSecs);
+
+    if(guestEl) guestEl.textContent=formatClockTime(remaining.guestSecs);
+
+
+    const turnRole=
+      onlineGame.turn()===room.hostSide ? 'host' : 'guest';
+
+
+    if(hostEl){
+      hostEl.classList.toggle(
+        'ticking',
+        turnRole==='host' && room.status==='active'
+      );
+    }
+
+    if(guestEl){
+      guestEl.classList.toggle(
+        'ticking',
+        turnRole==='guest' && room.status==='active'
+      );
+    }
+
+
+    if(
+      room.status==='active' &&
+      (onlineRole==='host' || onlineRole==='guest') &&
+      !spectateMode
+    ){
+
+      if(remaining.hostSecs<=0){
+
+        reportOnlineTimeout('host');
+
+      }else if(remaining.guestSecs<=0){
+
+        reportOnlineTimeout('guest');
+
+      }
+
+    }
+
+  }
+
+
+  function startOnlineClockTicker(){
+
+    stopOnlineClockTicker();
+
+    if(!onlineRoomData || !onlineRoomData.timeControlSeconds) return;
+
+    onlineClockInterval=
+      setInterval(syncOnlineClockDisplay,250);
+
+    syncOnlineClockDisplay();
+
+  }
+
+
+  function stopOnlineClockTicker(){
+
+    if(onlineClockInterval){
+
+      clearInterval(onlineClockInterval);
+
+      onlineClockInterval=null;
+
+    }
 
   }
 
@@ -10762,6 +10964,8 @@
 
     onlineLastSeenFen=null;
 
+    onlineTimeoutReported=false;
+
 
     if(onlineUnsub){
 
@@ -10832,6 +11036,10 @@
     onlineEloAppliedFor=null;
 
     onlineLastSeenFen=null;
+
+    onlineTimeoutReported=false;
+
+    stopOnlineClockTicker();
 
   }
 
@@ -10949,6 +11157,19 @@
     renderOnlineOpponentInfo(room);
 
     updateOnlineStatusBar(room);
+
+
+    if(room.status==='active' && room.timeControlSeconds){
+
+      startOnlineClockTicker();
+
+    }else{
+
+      stopOnlineClockTicker();
+
+      syncOnlineClockDisplay();
+
+    }
 
 
     if(
@@ -11387,6 +11608,41 @@
       updatedAt:Date.now()
 
     };
+
+
+    if(onlineRoomData && onlineRoomData.timeControlSeconds){
+
+      const now=Date.now();
+
+      const elapsed=
+        onlineRoomData.clockLastSyncAt
+          ? (now-onlineRoomData.clockLastSyncAt)/1000
+          : 0;
+
+      const hostSecs=
+        Number(onlineRoomData.hostClockSeconds ?? onlineRoomData.timeControlSeconds);
+
+      const guestSecs=
+        Number(onlineRoomData.guestClockSeconds ?? onlineRoomData.timeControlSeconds);
+
+
+      if(onlineRole==='host'){
+
+        update.hostClockSeconds=Math.max(0,hostSecs-elapsed);
+
+        update.guestClockSeconds=guestSecs;
+
+      }else{
+
+        update.guestClockSeconds=Math.max(0,guestSecs-elapsed);
+
+        update.hostClockSeconds=hostSecs;
+
+      }
+
+      update.clockLastSyncAt=now;
+
+    }
 
 
     if(onlineGame.in_checkmate()){
@@ -12869,6 +13125,8 @@
 
     spectateMode=null;
 
+    stopOnlineClockTicker();
+
 
     const banner=document.getElementById('spectateBanner');
 
@@ -12947,6 +13205,14 @@
           (room.status==='finished' ? 'Partida encerrada' :
             (room.hostUsername||'Host')+' vs '+(room.guestUsername||'...')
           );
+
+
+        if(room.status==='active' && room.timeControlSeconds){
+          startOnlineClockTicker();
+        }else{
+          stopOnlineClockTicker();
+          syncOnlineClockDisplay();
+        }
 
       });
 
@@ -14207,7 +14473,8 @@
             participants[i+1],
             1,
             i/2,
-            activeChampId
+            activeChampId,
+            lobby.timeControl
           )
         );
 
@@ -14326,6 +14593,9 @@
 
         const hostSide=Math.random()<0.5?'w':'b';
 
+        const secs=
+          Number(timeControlSeconds)||null;
+
         await dbSet('rooms/'+code,{
 
           code,
@@ -14356,6 +14626,11 @@
 
           championshipMatchId:matchId,
           championshipId:champId,
+
+          timeControlSeconds:secs,
+          hostClockSeconds:secs,
+          guestClockSeconds:secs,
+          clockLastSyncAt:secs?Date.now():null,
 
           createdAt:Date.now(),
           updatedAt:Date.now()
@@ -14617,7 +14892,8 @@
             winners[i+1],
             nextRoundNumber,
             i/2,
-            champId
+            champId,
+            champ.timeControl
           )
         );
 
