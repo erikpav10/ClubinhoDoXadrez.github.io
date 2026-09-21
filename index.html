@@ -3350,6 +3350,22 @@
         </div>
 
 
+        <div
+          id="engineErrorBox"
+          class="auth-err"
+          style="display:none;margin-top:10px;"
+        >
+          <span id="engineErrorText"></span>
+          <button
+            class="btn ghost"
+            id="btnRetryEngine"
+            style="margin-left:10px;padding:4px 12px;font-size:12px;"
+          >
+            Tentar novamente
+          </button>
+        </div>
+
+
       </div>
 
 
@@ -4725,6 +4741,32 @@
   Clube de Xadrez —
   jogue contra o bot, suba no ranking.
 
+  <br>
+
+  <small style="opacity:.6;">
+    O Bot joga com o motor
+    <a
+      href="https://stockfishchess.org/"
+      target="_blank"
+      rel="noopener"
+      style="color:inherit;"
+    >Stockfish</a>,
+    software livre distribuído sob licença
+    <a
+      href="https://www.gnu.org/licenses/gpl-3.0.html"
+      target="_blank"
+      rel="noopener"
+      style="color:inherit;"
+    >GPLv3</a>.
+    Código-fonte do Stockfish:
+    <a
+      href="https://github.com/official-stockfish/Stockfish"
+      target="_blank"
+      rel="noopener"
+      style="color:inherit;"
+    >github.com/official-stockfish/Stockfish</a>.
+  </small>
+
 </footer>
 
 
@@ -5076,51 +5118,32 @@
   };
 
 
+  /*
+    Configuração de dificuldade do Bot — agora usando o motor
+    Stockfish (WASM) em vez do antigo Minimax/Alpha-Beta.
+    "skill" é o parâmetro nativo do Stockfish (Skill Level,
+    0-20, quanto menor mais fraco) e "movetime" limita em
+    milissegundos quanto tempo o motor pode pensar em cada
+    lance — é isso que garante uma resposta rápida em qualquer
+    dificuldade, sem depender de delay artificial nenhum.
+  */
+
   const DIFF_CONFIG={
 
     easy:{
-      depth:2,
-      maxDepth:2,
-      timeBudgetMs:150,
-      thinkMin:150,
-      thinkMax:350,
-      randomness:.42
+      skill:1,
+      movetime:250
     },
 
     medium:{
-      depth:3,
-      maxDepth:3,
-      timeBudgetMs:350,
-      thinkMin:0,
-      thinkMax:0,
-      randomness:.10
+      skill:10,
+      movetime:600
     },
 
     hard:{
-      depth:6,
-      maxDepth:6,
-      timeBudgetMs:700,
-      thinkMin:200,
-      thinkMax:600,
-      randomness:.025
+      skill:20,
+      movetime:1200
     }
-
-  };
-
-
-  const PIECE_VALUE={
-
-    p:100,
-
-    n:320,
-
-    b:330,
-
-    r:500,
-
-    q:900,
-
-    k:20000
 
   };
 
@@ -6522,6 +6545,17 @@
 
 
   document
+    .getElementById('btnRetryEngine')
+    .addEventListener('click',()=>{
+
+      hideEngineError();
+
+      scheduleBotTurn();
+
+    });
+
+
+  document
     .getElementById(
       'btnResign'
     )
@@ -6547,11 +6581,16 @@
 
     closeResultModal();
 
+    hideEngineError();
+
 
     stopClock();
 
 
     gameSessionId++;
+
+
+    newStockfishGame();
 
 
     game=
@@ -7495,1028 +7534,383 @@
      ========================================================= */
 
 
-  const PST_PAWN=[
-
-    0,0,0,0,0,0,0,0,
-
-    50,50,50,50,50,50,50,50,
-
-    10,10,20,30,30,20,10,10,
-
-    5,5,10,25,25,10,5,5,
-
-    0,0,0,20,20,0,0,0,
-
-    5,-5,-10,0,0,-10,-5,5,
-
-    5,10,10,-20,-20,10,10,5,
-
-    0,0,0,0,0,0,0,0
-
-  ];
-
-
-  const PST_KNIGHT=[
-
-    -50,-40,-30,-30,-30,-30,-40,-50,
-
-    -40,-20,0,0,0,0,-20,-40,
-
-    -30,0,10,15,15,10,0,-30,
-
-    -30,5,15,20,20,15,5,-30,
-
-    -30,0,15,20,20,15,0,-30,
-
-    -30,5,10,15,15,10,5,-30,
-
-    -40,-20,0,5,5,0,-20,-40,
-
-    -50,-40,-30,-30,-30,-30,-40,-50
-
-  ];
-
-
-  const PST_BISHOP=[
-
-    -20,-10,-10,-10,-10,-10,-10,-20,
-
-    -10,0,0,0,0,0,0,-10,
-
-    -10,0,5,10,10,5,0,-10,
-
-    -10,5,5,10,10,5,5,-10,
-
-    -10,0,10,10,10,10,0,-10,
-
-    -10,10,10,10,10,10,10,-10,
-
-    -10,5,0,0,0,0,5,-10,
-
-    -20,-10,-10,-10,-10,-10,-10,-20
-
-  ];
-
-
-  const PST_ROOK=[
-
-    0,0,0,5,5,0,0,0,
-
-    -5,0,0,0,0,0,0,-5,
-
-    -5,0,0,0,0,0,0,-5,
-
-    -5,0,0,0,0,0,0,-5,
-
-    -5,0,0,0,0,0,0,-5,
-
-    -5,0,0,0,0,0,0,-5,
-
-    5,10,10,10,10,10,10,5,
-
-    0,0,0,0,0,0,0,0
-
-  ];
-
-
-  const PST_QUEEN=[
-
-    -20,-10,-10,-5,-5,-10,-10,-20,
-
-    -10,0,0,0,0,0,0,-10,
-
-    -10,0,5,5,5,5,0,-10,
-
-    -5,0,5,5,5,5,0,-5,
-
-    0,0,5,5,5,5,0,-5,
-
-    -10,5,5,5,5,5,0,-10,
-
-    -10,0,5,0,0,0,0,-10,
-
-    -20,-10,-10,-5,-5,-10,-10,-20
-
-  ];
-
-
-  const PST_KING=[
-
-    -30,-40,-40,-50,-50,-40,-40,-30,
-
-    -30,-40,-40,-50,-50,-40,-40,-30,
-
-    -30,-40,-40,-50,-50,-40,-40,-30,
-
-    -30,-40,-40,-50,-50,-40,-40,-30,
-
-    -20,-30,-30,-40,-40,-30,-30,-20,
-
-    -10,-20,-20,-20,-20,-20,-20,-10,
-
-    20,20,0,0,0,0,20,20,
-
-    20,30,10,0,0,10,30,20
-
-  ];
-
-
-  const PST={
-
-    p:PST_PAWN,
-
-    n:PST_KNIGHT,
-
-    b:PST_BISHOP,
-
-    r:PST_ROOK,
-
-    q:PST_QUEEN,
-
-    k:PST_KING
-
-  };
-
-
-  function evaluateBoard(g){
-
-    if(g.in_checkmate()){
-
-      return g.turn()==='w'
-        ? -999999
-        : 999999;
-
-    }
-
-
-    if(
-      g.in_draw() ||
-      g.in_stalemate()
-    ){
-
-      return 0;
-
-    }
-
-
-    const board=
-      g.board();
-
-
-    let score=0;
-
-
-    for(
-      let row=0;
-      row<8;
-      row++
-    ){
-
-      for(
-        let col=0;
-        col<8;
-        col++
-      ){
-
-        const piece=
-          board[row][col];
-
-
-        if(!piece) continue;
-
-
-        const idx=
-          row*8+col;
-
-
-        let value=
-          PIECE_VALUE[piece.type];
-
-
-        const table=
-          PST[piece.type];
-
-
-        if(table){
-
-          value+=
-            piece.color==='w'
-              ? table[idx]
-              : table[63-idx];
-
-        }
-
-
-        score+=
-          piece.color==='w'
-            ? value
-            : -value;
-
-      }
-
-    }
-
-
-    /*
-      Mobilidade.
-    */
-
-    const currentTurn=
-      g.turn();
-
-
-    const mobility=
-      g.moves().length;
-
-
-    score+=
-      currentTurn==='w'
-        ? mobility*2
-        : -mobility*2;
-
-
-    /*
-      Pequeno bônus por desenvolvimento.
-    */
-
-    const whitePieces=
-      g.board()
-        .flat()
-        .filter(
-          p=>p && p.color==='w'
-        ).length;
-
-
-    const blackPieces=
-      g.board()
-        .flat()
-        .filter(
-          p=>p && p.color==='b'
-        ).length;
-
-
-    score+=
-      (whitePieces-blackPieces)*2;
-
-
-    return score;
-
-  }
-
-
-  function orderedMoves(g){
-
-    const moves=
-      g.moves({
-        verbose:true
-      });
-
-
-    moves.sort((a,b)=>{
-
-      const scoreA=
-        moveOrderingScore(a);
-
-
-      const scoreB=
-        moveOrderingScore(b);
-
-
-      return scoreB-scoreA;
-
-    });
-
-
-    return moves;
-
-  }
-
-
-  function moveOrderingScore(move){
-
-    let score=0;
-
-
-    if(move.captured){
-
-      score+=
-        10*
-        (
-          PIECE_VALUE[
-            move.captured
-          ] || 0
-        );
-
-      score-=
-        PIECE_VALUE[
-          move.piece
-        ] || 0;
-
-    }
-
-
-    if(
-      move.promotion
-    ){
-
-      score+=
-        PIECE_VALUE[
-          move.promotion
-        ] || 0;
-
-    }
-
-
-    if(
-      move.san &&
-      (
-        move.san.includes('+') ||
-        move.san.includes('#')
-      )
-    ){
-
-      score+=800;
-
-    }
-
-
-    if(
-      move.flags &&
-      move.flags.includes('k')
-    ){
-
-      score+=30;
-
-    }
-
-
-    return score;
-
-  }
-
-
-  function minimax(
-    g,
-    depth,
-    alpha,
-    beta,
-    maximizing,
-    deadline
-  ){
-
-    if(
-      deadline &&
-      Date.now()>=deadline
-    ){
-
-      throw 'TIME_UP';
-
-    }
-
-
-    if(
-      depth<=0 ||
-      g.game_over()
-    ){
-
-      return evaluateBoard(g);
-
-    }
-
-
-    const moves=
-      orderedMoves(g);
-
-
-    if(
-      moves.length===0
-    ){
-
-      return evaluateBoard(g);
-
-    }
-
-
-    if(maximizing){
-
-      let best=-Infinity;
-
-
-      for(
-        const move of moves
-      ){
-
-        g.move(move);
-
-        let score;
-
-        try{
-
-          score=
-            minimax(
-              g,
-              depth-1,
-              alpha,
-              beta,
-              false,
-              deadline
-            );
-
-        }finally{
-
-          g.undo();
-
-        }
-
-
-        best=
-          Math.max(
-            best,
-            score
-          );
-
-
-        alpha=
-          Math.max(
-            alpha,
-            best
-          );
-
-
-        if(beta<=alpha){
-
-          break;
-
-        }
-
-      }
-
-
-      return best;
-
-    }
-
-
-    let best=Infinity;
-
-
-    for(
-      const move of moves
-    ){
-
-      g.move(move);
-
-      let score;
-
-      try{
-
-        score=
-          minimax(
-            g,
-            depth-1,
-            alpha,
-            beta,
-            true,
-            deadline
-          );
-
-      }finally{
-
-        g.undo();
-
-      }
-
-
-      best=
-        Math.min(
-          best,
-          score
-        );
-
-
-      beta=
-        Math.min(
-          beta,
-          best
-        );
-
-
-      if(beta<=alpha){
-
-        break;
-
-      }
-
-    }
-
-
-    return best;
-
-  }
-
-
-  function botPickMove(){
-
-    const botColor=
-      playerSide==='w'
-        ? 'b'
-        : 'w';
-
-
-    const maximizing=
-      botColor==='w';
-
-
-    const moves=
-      orderedMoves(game);
-
-
-    if(
-      moves.length===0
-    ){
-
-      return null;
-
-    }
-
-
-    const config=
-      DIFF_CONFIG[difficulty];
-
-
-    /*
-      Fácil:
-      escolhe ocasionalmente um lance
-      abaixo do melhor.
-    */
-
-    if(
-      difficulty==='easy' &&
-      Math.random()<config.randomness
-    ){
-
-      const top=
-        Math.min(
-          5,
-          moves.length
-        );
-
-
-      return moves[
-        Math.floor(
-          Math.random()*top
-        )
-      ];
-
-    }
-
-
-    let bestScore=
-      maximizing
-        ? -Infinity
-        : Infinity;
-
-
-    let bestMoves=[moves[0]];
-
-
-    const deadline=
-      Date.now()+
-      (config.timeBudgetMs||500);
-
-
-    for(
-      let depth=1;
-      depth<=(config.maxDepth||config.depth||3);
-      depth++
-    ){
-
-      let depthBestScore=
-        maximizing
-          ? -Infinity
-          : Infinity;
-
-      let depthBestMoves=[];
-
-      let aborted=false;
-
-
-      try{
-
-        for(
-          const move of moves
-        ){
-
-          game.move(move);
-
-          let score;
-
-          try{
-
-            score=
-              minimax(
-                game,
-                depth-1,
-                -Infinity,
-                Infinity,
-                !maximizing,
-                deadline
-              );
-
-          }finally{
-
-            game.undo();
-
-          }
-
-
-          if(
-            maximizing
-          ){
-
-            if(score>depthBestScore){
-
-              depthBestScore=score;
-
-              depthBestMoves=[move];
-
-            }else if(
-              score===depthBestScore
-            ){
-
-              depthBestMoves.push(move);
-
-            }
-
-          }else{
-
-            if(score<depthBestScore){
-
-              depthBestScore=score;
-
-              depthBestMoves=[move];
-
-            }else if(
-              score===depthBestScore
-            ){
-
-              depthBestMoves.push(move);
-
-            }
-
-          }
-
-        }
-
-      }catch(err){
-
-        if(err==='TIME_UP'){
-
-          aborted=true;
-
-        }else{
-
-          throw err;
-
-        }
-
-      }
-
-
-      if(
-        !aborted &&
-        depthBestMoves.length
-      ){
-
-        bestScore=depthBestScore;
-
-        bestMoves=depthBestMoves;
-
-      }
-
-
-      if(
-        aborted ||
-        Date.now()>=deadline
-      ){
-
-        break;
-
-      }
-
-    }
-
-
-    if(
-      difficulty==='medium' &&
-      Math.random()<config.randomness &&
-      moves.length>1
-    ){
-
-      return moves[
-        Math.floor(
-          Math.random()*
-          Math.min(3,moves.length)
-        )
-      ];
-
-    }
-
-
-    return bestMoves[
-      Math.floor(
-        Math.random()*
-        bestMoves.length
-      )
-    ] || moves[0];
-
-  }
-
-
   /* =========================================================
-     BOT — WEB WORKER
+     BOT — MOTOR STOCKFISH (WASM)
      ========================================================= */
 
   /*
-    O cálculo do Bot (minimax) roda dentro de um Web Worker,
-    em uma thread separada da interface. Assim o relógio e o
-    restante da página continuam respondendo normalmente
-    enquanto o Bot está pensando.
+    O Bot joga com o Stockfish de verdade, rodando localmente no
+    navegador via WebAssembly, dentro de um Web Worker (para não
+    travar a interface enquanto pensa). O chess.js continua
+    sendo o único responsável pelas regras do jogo — validação
+    de lance, xeque, xeque-mate, empate, FEN — o Stockfish só
+    entra para decidir QUAL lance o Bot faz, através do
+    protocolo UCI padrão (position / go / bestmove).
 
-    Mantemos também o cálculo antigo (botPickMoveAsync, mais
-    abaixo) como plano B, caso o navegador não possa criar
-    o Worker por algum motivo.
+    Arquivos necessários no repositório, na mesma origem do
+    site (sem servidor nenhum, funciona no GitHub Pages):
+
+      /stockfish/stockfish-18-lite-single.js
+      /stockfish/stockfish-18-lite-single.wasm
+
+    Baixe os dois em:
+    https://github.com/nmrugg/stockfish.js/releases/tag/v18.0.0
+    e coloque na pasta "stockfish" do site, junto do index.html.
+
+    O Stockfish é distribuído sob licença GPLv3. Este projeto
+    mantém o aviso de licença e a atribuição ao autor original
+    (veja o rodapé da página e o arquivo stockfish/LICENSE).
   */
 
-  const BOT_WORKER_SRC=[
-    '"use strict";',
-    'importScripts("https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js");',
-    '',
-    'var PIECE_VALUE={p:100,n:320,b:330,r:500,q:900,k:20000};',
-    '',
-    'var PST_PAWN=[0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0];',
-    'var PST_KNIGHT=[-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-30,-30,-40,-50];',
-    'var PST_BISHOP=[-20,-10,-10,-10,-10,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,10,10,5,0,-10,-10,5,5,10,10,5,5,-10,-10,0,10,10,10,10,0,-10,-10,10,10,10,10,10,10,-10,-10,5,0,0,0,0,5,-10,-20,-10,-10,-10,-10,-10,-10,-20];',
-    'var PST_ROOK=[0,0,0,5,5,0,0,0,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,5,10,10,10,10,10,10,5,0,0,0,0,0,0,0,0];',
-    'var PST_QUEEN=[-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-10,0,5,0,0,0,0,-10,-20,-10,-10,-5,-5,-10,-10,-20];',
-    'var PST_KING=[-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,20,30,10,0,0,10,30,20];',
-    'var PST={p:PST_PAWN,n:PST_KNIGHT,b:PST_BISHOP,r:PST_ROOK,q:PST_QUEEN,k:PST_KING};',
-    '',
-    'var DIFF_CONFIG={easy:{maxDepth:2,timeBudgetMs:150,randomness:.42},medium:{maxDepth:3,timeBudgetMs:350,randomness:.10},hard:{maxDepth:4,timeBudgetMs:700,randomness:.025}};',
-    '',
-    'function evaluateBoard(g){',
-    '  if(g.in_checkmate()) return g.turn()==="w" ? -999999 : 999999;',
-    '  if(g.in_draw()||g.in_stalemate()) return 0;',
-    '  var board=g.board();',
-    '  var score=0;',
-    '  for(var row=0;row<8;row++){',
-    '    for(var col=0;col<8;col++){',
-    '      var piece=board[row][col];',
-    '      if(!piece) continue;',
-    '      var idx=row*8+col;',
-    '      var value=PIECE_VALUE[piece.type];',
-    '      var table=PST[piece.type];',
-    '      if(table) value+=piece.color==="w" ? table[idx] : table[63-idx];',
-    '      score+=piece.color==="w" ? value : -value;',
-    '    }',
-    '  }',
-    '  var currentTurn=g.turn();',
-    '  var mobility=g.moves().length;',
-    '  score+=currentTurn==="w" ? mobility*2 : -mobility*2;',
-    '  var whitePieces=g.board().flat().filter(function(p){return p&&p.color==="w";}).length;',
-    '  var blackPieces=g.board().flat().filter(function(p){return p&&p.color==="b";}).length;',
-    '  score+=(whitePieces-blackPieces)*2;',
-    '  return score;',
-    '}',
-    '',
-    'function moveOrderingScore(move){',
-    '  var score=0;',
-    '  if(move.captured){',
-    '    score+=10*(PIECE_VALUE[move.captured]||0);',
-    '    score-=PIECE_VALUE[move.piece]||0;',
-    '  }',
-    '  if(move.promotion) score+=PIECE_VALUE[move.promotion]||0;',
-    '  if(move.san&&(move.san.includes("+")||move.san.includes("#"))) score+=800;',
-    '  if(move.flags&&move.flags.includes("k")) score+=30;',
-    '  return score;',
-    '}',
-    '',
-    'function orderedMoves(g){',
-    '  var moves=g.moves({verbose:true});',
-    '  moves.sort(function(a,b){return moveOrderingScore(b)-moveOrderingScore(a);});',
-    '  return moves;',
-    '}',
-    '',
-    'function minimax(g,depth,alpha,beta,maximizing,deadline){',
-    '  if(deadline&&Date.now()>=deadline) throw "TIME_UP";',
-    '  if(depth<=0||g.game_over()) return evaluateBoard(g);',
-    '  var moves=orderedMoves(g);',
-    '  if(moves.length===0) return evaluateBoard(g);',
-    '  if(maximizing){',
-    '    var best=-Infinity;',
-    '    for(var i=0;i<moves.length;i++){',
-    '      g.move(moves[i]);',
-    '      var score;',
-    '      try{ score=minimax(g,depth-1,alpha,beta,false,deadline); }',
-    '      finally{ g.undo(); }',
-    '      best=Math.max(best,score);',
-    '      alpha=Math.max(alpha,best);',
-    '      if(beta<=alpha) break;',
-    '    }',
-    '    return best;',
-    '  }',
-    '  var worst=Infinity;',
-    '  for(var j=0;j<moves.length;j++){',
-    '    g.move(moves[j]);',
-    '    var score2;',
-    '    try{ score2=minimax(g,depth-1,alpha,beta,true,deadline); }',
-    '    finally{ g.undo(); }',
-    '    worst=Math.min(worst,score2);',
-    '    beta=Math.min(beta,worst);',
-    '    if(beta<=alpha) break;',
-    '  }',
-    '  return worst;',
-    '}',
-    '',
-    'function pickMove(game,difficulty,playerSide){',
-    '  var botColor=playerSide==="w" ? "b" : "w";',
-    '  var maximizing=botColor==="w";',
-    '  var moves=orderedMoves(game);',
-    '  if(!moves.length) return null;',
-    '  var config=DIFF_CONFIG[difficulty]||DIFF_CONFIG.medium;',
-    '  if(difficulty==="easy"&&Math.random()<config.randomness){',
-    '    var top=Math.min(5,moves.length);',
-    '    return moves[Math.floor(Math.random()*top)];',
-    '  }',
-    '  var deadline=Date.now()+(config.timeBudgetMs||500);',
-    '  var bestMoves=[moves[0]];',
-    '  for(var depth=1; depth<=(config.maxDepth||3); depth++){',
-    '    var depthBestScore=maximizing ? -Infinity : Infinity;',
-    '    var depthBestMoves=[];',
-    '    var aborted=false;',
-    '    try{',
-    '      for(var i=0;i<moves.length;i++){',
-    '        var move=moves[i];',
-    '        game.move(move);',
-    '        var score;',
-    '        try{ score=minimax(game,depth-1,-Infinity,Infinity,!maximizing,deadline); }',
-    '        finally{ game.undo(); }',
-    '        if(maximizing){',
-    '          if(score>depthBestScore){depthBestScore=score;depthBestMoves=[move];}',
-    '          else if(score===depthBestScore) depthBestMoves.push(move);',
-    '        }else{',
-    '          if(score<depthBestScore){depthBestScore=score;depthBestMoves=[move];}',
-    '          else if(score===depthBestScore) depthBestMoves.push(move);',
-    '        }',
-    '      }',
-    '    }catch(err){',
-    '      if(err==="TIME_UP"){ aborted=true; } else { throw err; }',
-    '    }',
-    '    if(!aborted&&depthBestMoves.length){ bestMoves=depthBestMoves; }',
-    '    if(aborted||Date.now()>=deadline) break;',
-    '  }',
-    '  if(difficulty==="medium"&&Math.random()<config.randomness&&moves.length>1){',
-    '    return moves[Math.floor(Math.random()*Math.min(3,moves.length))];',
-    '  }',
-    '  return bestMoves[Math.floor(Math.random()*bestMoves.length)]||moves[0];',
-    '}',
-    '',
-    'self.onmessage=function(e){',
-    '  var data=e.data||{};',
-    '  try{',
-    '    var game=new Chess(data.fen);',
-    '    var move=pickMove(game,data.difficulty,data.playerSide);',
-    '    self.postMessage({ok:true,requestId:data.requestId,move:move?{from:move.from,to:move.to}:null});',
-    '  }catch(err){',
-    '    self.postMessage({ok:false,requestId:data.requestId,error:String((err&&err.message)||err)});',
-    '  }',
-    '};'
-  ].join('\n');
+  const STOCKFISH_JS_PATH='./stockfish/stockfish-18-lite-single.js';
+
+  let stockfishWorker=null;
+
+  let stockfishState='idle'; /* idle | initializing | ready */
+
+  let stockfishInitPromise=null;
+
+  let stockfishInitResolve=null;
+
+  let stockfishInitReject=null;
+
+  let stockfishBusy=false;
+
+  let stockfishMoveResolve=null;
+
+  let stockfishMoveReject=null;
 
 
-  let botWorker=null;
+  function createStockfishWorker(){
 
-  let botWorkerRequestId=0;
-
-
-  function getBotWorker(){
-
-    if(botWorker) return botWorker;
-
-    try{
-
-      const blob=
-        new Blob(
-          [BOT_WORKER_SRC],
-          {type:'application/javascript'}
-        );
-
-      botWorker=
-        new Worker(
-          URL.createObjectURL(blob)
-        );
-
-    }catch(error){
-
-      console.error(
-        'Não foi possível iniciar o Web Worker do Bot:',
-        error
-      );
-
-      botWorker=null;
-
-    }
-
-    return botWorker;
-
-  }
+    const worker=new Worker(STOCKFISH_JS_PATH);
 
 
-  function requestBotMoveFromWorker(fen,diff,side){
+    worker.onmessage=function(e){
 
-    return new Promise((resolve,reject)=>{
+      const line=
+        typeof e.data==='string'
+          ? e.data
+          : (e.data && e.data.data) || '';
 
-      const worker=getBotWorker();
+      onStockfishLine(line);
 
-      if(!worker){
-        reject(new Error('Worker indisponível'));
-        return;
+    };
+
+
+    worker.onerror=function(err){
+
+      console.error('Erro no worker do Stockfish:',err);
+
+      stockfishState='idle';
+
+      stockfishBusy=false;
+
+
+      if(stockfishInitReject){
+
+        const rej=stockfishInitReject;
+
+        stockfishInitResolve=null;
+
+        stockfishInitReject=null;
+
+        rej(new Error('Falha ao carregar o Stockfish.'));
+
       }
 
-      const requestId=++botWorkerRequestId;
 
-      const handleMessage=e=>{
+      if(stockfishMoveReject){
 
-        if(!e.data || e.data.requestId!==requestId) return;
+        const rej=stockfishMoveReject;
 
-        worker.removeEventListener('message',handleMessage);
-        worker.removeEventListener('error',handleError);
+        stockfishMoveResolve=null;
 
-        if(e.data.ok) resolve(e.data.move);
-        else reject(new Error(e.data.error||'Erro no worker do Bot'));
+        stockfishMoveReject=null;
 
-      };
+        rej(new Error('Falha no motor Stockfish durante o cálculo.'));
 
-      const handleError=err=>{
+      }
 
-        worker.removeEventListener('message',handleMessage);
-        worker.removeEventListener('error',handleError);
+    };
 
-        reject(err);
 
-      };
-
-      worker.addEventListener('message',handleMessage);
-      worker.addEventListener('error',handleError);
-
-      worker.postMessage({
-        requestId,
-        fen,
-        difficulty:diff,
-        playerSide:side
-      });
-
-    });
+    return worker;
 
   }
 
 
-  async function botPickMoveAsync(){
-    const botColor=playerSide==='w'?'b':'w';
-    const maximizing=botColor==='w';
-    const moves=orderedMoves(game);
-    if(!moves.length) return null;
-    const config=DIFF_CONFIG[difficulty];
-    if(difficulty==='easy' && Math.random()<config.randomness){
-      const top=Math.min(5,moves.length);
-      return moves[Math.floor(Math.random()*top)];
+  function onStockfishLine(line){
+
+    if(!line) return;
+
+
+    if(line==='uciok'){
+
+      stockfishWorker.postMessage('isready');
+
+      return;
+
     }
-    let bestScore=maximizing?-Infinity:Infinity,bestMoves=[],index=0;
-    return await new Promise(resolve=>{
-      const next=()=>{
-        if(!gameActive || game.turn()===playerSide){resolve(null);return;}
-        if(index>=moves.length){
-          if(difficulty==='medium'&&Math.random()<config.randomness&&moves.length>1) resolve(moves[Math.floor(Math.random()*Math.min(3,moves.length))]);
-          else resolve(bestMoves[Math.floor(Math.random()*bestMoves.length)]||moves[0]);
-          return;
+
+
+    if(line==='readyok'){
+
+      if(stockfishState==='initializing'){
+
+        stockfishState='ready';
+
+
+        if(stockfishInitResolve){
+
+          const res=stockfishInitResolve;
+
+          stockfishInitResolve=null;
+
+          stockfishInitReject=null;
+
+          res();
+
         }
-        const move=moves[index++];
-        game.move(move);
-        const score=minimax(game,config.depth-1,-Infinity,Infinity,!maximizing);
-        game.undo();
-        if(maximizing){if(score>bestScore){bestScore=score;bestMoves=[move];}else if(score===bestScore)bestMoves.push(move);}
-        else{if(score<bestScore){bestScore=score;bestMoves=[move];}else if(score===bestScore)bestMoves.push(move);}
-        setTimeout(next,0);
-      };
-      next();
-    });
+
+      }
+
+      return;
+
+    }
+
+
+    if(line.indexOf('bestmove')===0){
+
+      stockfishBusy=false;
+
+      const parts=line.split(' ');
+
+      const uciMove=parts[1];
+
+
+      if(stockfishMoveResolve){
+
+        const res=stockfishMoveResolve;
+
+        stockfishMoveResolve=null;
+
+        stockfishMoveReject=null;
+
+        res(uciMove);
+
+      }
+
+      return;
+
+    }
+
   }
+
+
+  function ensureStockfishReady(){
+
+    if(stockfishState==='ready') return Promise.resolve();
+
+    if(stockfishState==='initializing') return stockfishInitPromise;
+
+
+    stockfishState='initializing';
+
+
+    stockfishInitPromise=new Promise((resolve,reject)=>{
+
+      let settled=false;
+
+
+      stockfishInitResolve=()=>{ settled=true; resolve(); };
+
+      stockfishInitReject=(err)=>{ settled=true; reject(err); };
+
+
+      try{
+
+        stockfishWorker=createStockfishWorker();
+
+        stockfishWorker.postMessage('uci');
+
+
+        setTimeout(()=>{
+
+          if(!settled){
+
+            stockfishState='idle';
+
+            stockfishInitResolve=null;
+
+            stockfishInitReject=null;
+
+            reject(new Error('O Stockfish demorou demais para responder.'));
+
+          }
+
+        },12000);
+
+
+      }catch(error){
+
+        stockfishState='idle';
+
+        reject(error);
+
+      }
+
+    });
+
+
+    return stockfishInitPromise;
+
+  }
+
+
+  function newStockfishGame(){
+
+    if(stockfishState==='ready' && stockfishWorker){
+
+      stockfishWorker.postMessage('ucinewgame');
+
+    }
+
+  }
+
+
+  function requestBotMoveFromStockfish(fen,diffKey){
+
+    return new Promise(async(resolve,reject)=>{
+
+      try{
+
+        await ensureStockfishReady();
+
+      }catch(error){
+
+        reject(error);
+
+        return;
+
+      }
+
+
+      /*
+        O Stockfish só calcula uma posição por vez. Se ainda
+        houver um cálculo antigo pendente (ex.: o jogador
+        iniciou uma partida nova enquanto o Bot pensava), manda
+        parar e espera o motor confirmar antes de pedir o
+        próximo lance — evita misturar a resposta de uma busca
+        antiga com a posição de uma partida nova.
+      */
+
+      if(stockfishBusy){
+
+        await new Promise(finishOld=>{
+
+          const timeout=setTimeout(finishOld,3000);
+
+          stockfishMoveResolve=()=>{ clearTimeout(timeout); finishOld(); };
+
+          stockfishMoveReject=()=>{ clearTimeout(timeout); finishOld(); };
+
+          stockfishWorker.postMessage('stop');
+
+        });
+
+      }
+
+
+      const cfg=
+        DIFF_CONFIG[diffKey] || DIFF_CONFIG.medium;
+
+
+      stockfishBusy=true;
+
+
+      stockfishMoveResolve=(uciMove)=>{
+
+        if(!uciMove || uciMove==='(none)'){
+
+          resolve(null);
+
+        }else{
+
+          resolve({
+
+            from:uciMove.slice(0,2),
+
+            to:uciMove.slice(2,4),
+
+            promotion:
+              uciMove.length>4 ? uciMove[4] : undefined
+
+          });
+
+        }
+
+      };
+
+
+      stockfishMoveReject=reject;
+
+
+      stockfishWorker.postMessage(
+        'setoption name Skill Level value '+cfg.skill
+      );
+
+      stockfishWorker.postMessage('position fen '+fen);
+
+      stockfishWorker.postMessage('go movetime '+cfg.movetime);
+
+    });
+
+  }
+
+
+  function showEngineError(message){
+
+    const box=document.getElementById('engineErrorBox');
+
+    const textEl=document.getElementById('engineErrorText');
+
+    if(textEl){
+
+      textEl.textContent=
+        message||'O motor de xadrez (Stockfish) não respondeu. Verifique se os arquivos do Stockfish estão no repositório e tente novamente.';
+
+    }
+
+    if(box){
+
+      box.style.display='block';
+
+    }
+
+    hideThinking();
+
+    botThinking=false;
+
+  }
+
+
+  function hideEngineError(){
+
+    const box=document.getElementById('engineErrorBox');
+
+    if(box) box.style.display='none';
+
+  }
+
 
   async function scheduleBotTurn(){
 
     if(!gameActive||botThinking||game.turn()===playerSide)return;
 
     const sessionAtStart=gameSessionId;
+
+    hideEngineError();
 
     botThinking=true;showThinking();updateClockVisuals();syncClock();
 
@@ -8528,15 +7922,19 @@
 
     try{
 
-      mv=await requestBotMoveFromWorker(fen,difficulty,playerSide);
+      mv=await requestBotMoveFromStockfish(fen,difficulty);
 
     }catch(error){
 
-      console.error('Worker do Bot falhou, usando cálculo local:',error);
+      console.error('Erro ao calcular o lance do Bot:',error);
 
       if(gameSessionId===sessionAtStart && gameActive){
-        mv=await botPickMoveAsync();
+
+        showEngineError();
+
       }
+
+      return;
 
     }
 
