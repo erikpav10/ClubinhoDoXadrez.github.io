@@ -5128,21 +5128,32 @@
     dificuldade, sem depender de delay artificial nenhum.
   */
 
+  /*
+    "blunderChance" é a chance (0 a 1) do Bot ignorar a sugestão
+    do Stockfish e jogar um lance aleatório entre os legais —
+    é isso que faz o Fácil/Médio errarem de vez em quando e
+    permitirem o jogador vencer. Sem isso, mesmo o Skill Level
+    mais baixo do Stockfish ainda joga forte demais (~1300 Elo).
+  */
+
   const DIFF_CONFIG={
 
     easy:{
       skill:0,
-      movetime:5
+      movetime:150,
+      blunderChance:.45
     },
 
     medium:{
-      skill:5,
-      movetime:150
+      skill:6,
+      movetime:400,
+      blunderChance:.15
     },
 
     hard:{
       skill:20,
-      movetime:500
+      movetime:1200,
+      blunderChance:0
     }
 
   };
@@ -7562,7 +7573,7 @@
     (veja o rodapé da página e o arquivo stockfish/LICENSE).
   */
 
-  const STOCKFISH_JS_PATH='./stockfish/stockfish-18-lite-single.js';
+  const STOCKFISH_JS_PATH='./stockfish-18-lite-single.js';
 
   let stockfishWorker=null;
 
@@ -7783,6 +7794,53 @@
 
     return new Promise(async(resolve,reject)=>{
 
+      const cfg=
+        DIFF_CONFIG[diffKey] || DIFF_CONFIG.medium;
+
+
+      /*
+        Erro proposital: em vez de perguntar pro Stockfish, joga
+        um lance aleatório entre os legais. É isso que faz o
+        Fácil/Médio realmente errarem de vez em quando.
+      */
+
+      if(cfg.blunderChance && Math.random()<cfg.blunderChance){
+
+        try{
+
+          const tempGame=new Chess(fen);
+
+          const legalMoves=tempGame.moves({verbose:true});
+
+
+          if(legalMoves.length){
+
+            const pick=
+              legalMoves[
+                Math.floor(Math.random()*legalMoves.length)
+              ];
+
+            resolve({
+              from:pick.from,
+              to:pick.to,
+              promotion:pick.promotion||undefined
+            });
+
+            return;
+
+          }
+
+        }catch(error){
+
+          console.error('Erro ao sortear lance aleatório:',error);
+
+          /* se der erro no sorteio, cai pro fluxo normal com o Stockfish */
+
+        }
+
+      }
+
+
       try{
 
         await ensureStockfishReady();
@@ -7820,10 +7878,6 @@
         });
 
       }
-
-
-      const cfg=
-        DIFF_CONFIG[diffKey] || DIFF_CONFIG.medium;
 
 
       stockfishBusy=true;
