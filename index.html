@@ -3350,22 +3350,6 @@
         </div>
 
 
-        <div
-          id="engineErrorBox"
-          class="auth-err"
-          style="display:none;margin-top:10px;"
-        >
-          <span id="engineErrorText"></span>
-          <button
-            class="btn ghost"
-            id="btnRetryEngine"
-            style="margin-left:10px;padding:4px 12px;font-size:12px;"
-          >
-            Tentar novamente
-          </button>
-        </div>
-
-
       </div>
 
 
@@ -5165,23 +5149,6 @@
   ];
 
 
-  const PIECE_SYMBOL={
-
-    p:'p-pawn',
-
-    n:'p-knight',
-
-    b:'p-bishop',
-
-    r:'p-rook',
-
-    q:'p-queen',
-
-    k:'p-king'
-
-  };
-
-
   /*
     Conjuntos de peças disponíveis para personalização no Perfil.
     'classic' e 'minimal' usam símbolos SVG (<use>); 'symbols'
@@ -6556,17 +6523,6 @@
 
 
   document
-    .getElementById('btnRetryEngine')
-    .addEventListener('click',()=>{
-
-      hideEngineError();
-
-      scheduleBotTurn();
-
-    });
-
-
-  document
     .getElementById(
       'btnResign'
     )
@@ -6591,8 +6547,6 @@
   function startNewGame(){
 
     closeResultModal();
-
-    hideEngineError();
 
 
     stopClock();
@@ -7550,410 +7504,412 @@
      ========================================================= */
 
   /*
-    O Bot joga com o Stockfish de verdade, rodando localmente no
-    navegador via WebAssembly, dentro de um Web Worker (para não
-    travar a interface enquanto pensa). O chess.js continua
-    sendo o único responsável pelas regras do jogo — validação
-    de lance, xeque, xeque-mate, empate, FEN — o Stockfish só
-    entra para decidir QUAL lance o Bot faz, através do
-    protocolo UCI padrão (position / go / bestmove).
+    O Bot sempre faz um lance. A decisão acontece em
+    requestBotMove(), nesta ordem:
 
-    Arquivos necessários no repositório, na mesma origem do
-    site (sem servidor nenhum, funciona no GitHub Pages):
+      1. Erro proposital (Fácil/Médio): às vezes joga um lance
+         legal aleatório em vez do melhor — assim dá para vencer.
+      2. Stockfish (WebAssembly, em um Web Worker): escolhe o
+         lance usando o protocolo UCI (position / go / bestmove).
+      3. Reserva: se o Stockfish não carregar, demorar demais ou
+         devolver um lance inválido, joga um lance legal
+         aleatório. A partida nunca trava nem mostra erro.
 
-      /stockfish/stockfish-18-lite-single.js
-      /stockfish/stockfish-18-lite-single.wasm
+    O chess.js continua sendo o dono das regras do jogo.
 
-    Baixe os dois em:
-    https://github.com/nmrugg/stockfish.js/releases/tag/v18.0.0
-    e coloque na pasta "stockfish" do site, junto do index.html.
+    Arquivos do motor (mesma origem do site, pasta "stockfish"):
+      stockfish/stockfish-18-lite-single.js
+      stockfish/stockfish-18-lite-single.wasm
 
-    O Stockfish é distribuído sob licença GPLv3. Este projeto
-    mantém o aviso de licença e a atribuição ao autor original
-    (veja o rodapé da página e o arquivo stockfish/LICENSE).
+    O Stockfish é distribuído sob licença GPLv3 (veja o rodapé).
   */
 
-  const STOCKFISH_JS_PATH='./stockfish-18-lite-single.js';
+  const STOCKFISH_PATHS=[
+    './stockfish/stockfish-18-lite-single.js',
+    './stockfish-18-lite-single.js'
+  ];
 
-  let stockfishWorker=null;
+  let sfWorker=null;
 
-  let stockfishState='idle'; /* idle | initializing | ready */
+  let sfReady=false;
 
-  let stockfishInitPromise=null;
+  let sfInitPromise=null;
 
-  let stockfishInitResolve=null;
+  let sfOutstanding=0;
 
-  let stockfishInitReject=null;
+  let sfPending=null;
 
-  let stockfishBusy=false;
+  let sfDisabledUntil=0;
 
-  let stockfishMoveResolve=null;
 
-  let stockfishMoveReject=null;
+  function getRandomLegalMove(fen){
 
+    try{
 
-  function createStockfishWorker(){
+      const moves=new Chess(fen).moves({verbose:true});
 
-    const worker=new Worker(STOCKFISH_JS_PATH);
+      if(!moves.length) return null;
 
+      const pick=moves[Math.floor(Math.random()*moves.length)];
 
-    worker.onmessage=function(e){
+      return {from:pick.from,to:pick.to};
 
-      const line=
-        typeof e.data==='string'
-          ? e.data
-          : (e.data && e.data.data) || '';
+    }catch(error){
 
-      onStockfishLine(line);
+      console.error('Erro ao sortear lance aleatório:',error);
 
-    };
-
-
-    worker.onerror=function(err){
-
-      console.error('Erro no worker do Stockfish:',err);
-
-      stockfishState='idle';
-
-      stockfishBusy=false;
-
-
-      if(stockfishInitReject){
-
-        const rej=stockfishInitReject;
-
-        stockfishInitResolve=null;
-
-        stockfishInitReject=null;
-
-        rej(new Error('Falha ao carregar o Stockfish.'));
-
-      }
-
-
-      if(stockfishMoveReject){
-
-        const rej=stockfishMoveReject;
-
-        stockfishMoveResolve=null;
-
-        stockfishMoveReject=null;
-
-        rej(new Error('Falha no motor Stockfish durante o cálculo.'));
-
-      }
-
-    };
-
-
-    return worker;
-
-  }
-
-
-  function onStockfishLine(line){
-
-    if(!line) return;
-
-
-    if(line==='uciok'){
-
-      stockfishWorker.postMessage('isready');
-
-      return;
-
-    }
-
-
-    if(line==='readyok'){
-
-      if(stockfishState==='initializing'){
-
-        stockfishState='ready';
-
-
-        if(stockfishInitResolve){
-
-          const res=stockfishInitResolve;
-
-          stockfishInitResolve=null;
-
-          stockfishInitReject=null;
-
-          res();
-
-        }
-
-      }
-
-      return;
-
-    }
-
-
-    if(line.indexOf('bestmove')===0){
-
-      stockfishBusy=false;
-
-      const parts=line.split(' ');
-
-      const uciMove=parts[1];
-
-
-      if(stockfishMoveResolve){
-
-        const res=stockfishMoveResolve;
-
-        stockfishMoveResolve=null;
-
-        stockfishMoveReject=null;
-
-        res(uciMove);
-
-      }
-
-      return;
+      return null;
 
     }
 
   }
 
 
-  function ensureStockfishReady(){
+  function isLegalBotMove(fen,mv){
 
-    if(stockfishState==='ready') return Promise.resolve();
+    try{
 
-    if(stockfishState==='initializing') return stockfishInitPromise;
+      return new Chess(fen)
+        .moves({verbose:true})
+        .some(m=>m.from===mv.from && m.to===mv.to);
 
+    }catch(error){
 
-    stockfishState='initializing';
-
-
-    stockfishInitPromise=new Promise((resolve,reject)=>{
-
-      let settled=false;
-
-
-      stockfishInitResolve=()=>{ settled=true; resolve(); };
-
-      stockfishInitReject=(err)=>{ settled=true; reject(err); };
-
-
-      try{
-
-        stockfishWorker=createStockfishWorker();
-
-        stockfishWorker.postMessage('uci');
-
-
-        setTimeout(()=>{
-
-          if(!settled){
-
-            stockfishState='idle';
-
-            stockfishInitResolve=null;
-
-            stockfishInitReject=null;
-
-            reject(new Error('O Stockfish demorou demais para responder.'));
-
-          }
-
-        },12000);
-
-
-      }catch(error){
-
-        stockfishState='idle';
-
-        reject(error);
-
-      }
-
-    });
-
-
-    return stockfishInitPromise;
-
-  }
-
-
-  function newStockfishGame(){
-
-    if(stockfishState==='ready' && stockfishWorker){
-
-      stockfishWorker.postMessage('ucinewgame');
+      return false;
 
     }
 
   }
 
 
-  function requestBotMoveFromStockfish(fen,diffKey){
+  function sfFail(reason){
 
-    return new Promise(async(resolve,reject)=>{
+    console.warn(
+      'Stockfish indisponível, o Bot usará lances aleatórios por 30s:',
+      reason
+    );
 
-      const cfg=
-        DIFF_CONFIG[diffKey] || DIFF_CONFIG.medium;
+    sfDisabledUntil=Date.now()+30000;
 
+    sfReady=false;
 
-      /*
-        Erro proposital: em vez de perguntar pro Stockfish, joga
-        um lance aleatório entre os legais. É isso que faz o
-        Fácil/Médio realmente errarem de vez em quando.
-      */
+    sfOutstanding=0;
 
-      if(cfg.blunderChance && Math.random()<cfg.blunderChance){
-
-        try{
-
-          const tempGame=new Chess(fen);
-
-          const legalMoves=tempGame.moves({verbose:true});
+    sfInitPromise=null;
 
 
-          if(legalMoves.length){
+    if(sfWorker){
 
-            const pick=
-              legalMoves[
-                Math.floor(Math.random()*legalMoves.length)
-              ];
+      try{ sfWorker.terminate(); }catch(e){}
 
-            resolve({
-              from:pick.from,
-              to:pick.to,
-              promotion:pick.promotion||undefined
-            });
+      sfWorker=null;
 
-            return;
-
-          }
-
-        }catch(error){
-
-          console.error('Erro ao sortear lance aleatório:',error);
-
-          /* se der erro no sorteio, cai pro fluxo normal com o Stockfish */
-
-        }
-
-      }
+    }
 
 
-      try{
+    if(sfPending){
 
-        await ensureStockfishReady();
+      const p=sfPending;
 
-      }catch(error){
+      sfPending=null;
 
-        reject(error);
+      clearTimeout(p.timer);
+
+      p.resolve(null);
+
+    }
+
+  }
+
+
+  function startStockfishFrom(pathIndex){
+
+    return new Promise(resolve=>{
+
+      if(pathIndex>=STOCKFISH_PATHS.length){
+
+        resolve(false);
 
         return;
 
       }
 
 
-      /*
-        O Stockfish só calcula uma posição por vez. Se ainda
-        houver um cálculo antigo pendente (ex.: o jogador
-        iniciou uma partida nova enquanto o Bot pensava), manda
-        parar e espera o motor confirmar antes de pedir o
-        próximo lance — evita misturar a resposta de uma busca
-        antiga com a posição de uma partida nova.
-      */
+      let worker;
 
-      if(stockfishBusy){
+      try{
 
-        await new Promise(finishOld=>{
+        worker=new Worker(STOCKFISH_PATHS[pathIndex]);
 
-          const timeout=setTimeout(finishOld,3000);
+      }catch(error){
 
-          stockfishMoveResolve=()=>{ clearTimeout(timeout); finishOld(); };
+        resolve(startStockfishFrom(pathIndex+1));
 
-          stockfishMoveReject=()=>{ clearTimeout(timeout); finishOld(); };
-
-          stockfishWorker.postMessage('stop');
-
-        });
+        return;
 
       }
 
 
-      stockfishBusy=true;
+      let settled=false;
 
 
-      stockfishMoveResolve=(uciMove)=>{
+      const timer=setTimeout(()=>{
 
-        if(!uciMove || uciMove==='(none)'){
+        if(settled) return;
 
-          resolve(null);
+        settled=true;
 
-        }else{
+        try{ worker.terminate(); }catch(e){}
 
-          resolve({
+        resolve(false);
 
-            from:uciMove.slice(0,2),
+      },15000);
 
-            to:uciMove.slice(2,4),
 
-            promotion:
-              uciMove.length>4 ? uciMove[4] : undefined
+      worker.onerror=function(){
 
-          });
+        if(!settled){
+
+          settled=true;
+
+          clearTimeout(timer);
+
+          try{ worker.terminate(); }catch(e){}
+
+          resolve(startStockfishFrom(pathIndex+1));
+
+          return;
 
         }
+
+        if(worker===sfWorker) sfFail('erro no worker');
 
       };
 
 
-      stockfishMoveReject=reject;
+      worker.onmessage=function(e){
+
+        const line=
+          typeof e.data==='string'
+            ? e.data
+            : (e.data && e.data.data) || '';
 
 
-      stockfishWorker.postMessage(
-        'setoption name Skill Level value '+cfg.skill
-      );
+        if(!settled){
 
-      stockfishWorker.postMessage('position fen '+fen);
+          if(line==='uciok'){
 
-      stockfishWorker.postMessage('go movetime '+cfg.movetime);
+            worker.postMessage('isready');
+
+          }else if(line==='readyok'){
+
+            settled=true;
+
+            clearTimeout(timer);
+
+            sfWorker=worker;
+
+            sfReady=true;
+
+            resolve(true);
+
+          }
+
+          return;
+
+        }
+
+
+        if(worker===sfWorker) onStockfishLine(line);
+
+      };
+
+
+      worker.postMessage('uci');
 
     });
 
   }
 
 
-  function showEngineError(message){
+  function ensureStockfish(){
 
-    const box=document.getElementById('engineErrorBox');
+    if(sfReady && sfWorker) return Promise.resolve(true);
 
-    const textEl=document.getElementById('engineErrorText');
+    if(Date.now()<sfDisabledUntil) return Promise.resolve(false);
 
-    if(textEl){
 
-      textEl.textContent=
-        message||'O motor de xadrez (Stockfish) não respondeu. Verifique se os arquivos do Stockfish estão no repositório e tente novamente.';
+    if(!sfInitPromise){
+
+      sfInitPromise=startStockfishFrom(0).then(ok=>{
+
+        if(!ok){
+
+          sfFail('não foi possível carregar os arquivos do Stockfish');
+
+        }else{
+
+          sfInitPromise=null;
+
+        }
+
+        return ok;
+
+      });
 
     }
 
-    if(box){
-
-      box.style.display='block';
-
-    }
-
-    hideThinking();
-
-    botThinking=false;
+    return sfInitPromise;
 
   }
 
 
-  function hideEngineError(){
+  function onStockfishLine(line){
 
-    const box=document.getElementById('engineErrorBox');
+    if(line.indexOf('bestmove')!==0) return;
 
-    if(box) box.style.display='none';
+
+    if(sfOutstanding>0) sfOutstanding--;
+
+    if(sfOutstanding>0) return;
+
+
+    if(sfPending){
+
+      const p=sfPending;
+
+      sfPending=null;
+
+      clearTimeout(p.timer);
+
+      const uci=line.split(' ')[1];
+
+      p.resolve(
+        uci && uci!=='(none)'
+          ? {from:uci.slice(0,2),to:uci.slice(2,4)}
+          : null
+      );
+
+    }
+
+  }
+
+
+  async function askStockfish(fen,cfg){
+
+    /* não deixa o Bot esperando o carregamento do motor */
+
+    const ok=await Promise.race([
+      ensureStockfish(),
+      new Promise(r=>setTimeout(()=>r(false),3000))
+    ]);
+
+    if(!ok || !sfWorker) return null;
+
+
+    return new Promise(resolve=>{
+
+      if(sfPending){
+
+        const old=sfPending;
+
+        sfPending=null;
+
+        clearTimeout(old.timer);
+
+        old.resolve(null);
+
+      }
+
+
+      if(sfOutstanding>0) sfWorker.postMessage('stop');
+
+
+      const timer=setTimeout(()=>{
+
+        if(sfPending && sfPending.resolve===resolve){
+
+          sfPending=null;
+
+          sfFail('o Stockfish demorou demais para responder');
+
+          resolve(null);
+
+        }
+
+      },cfg.movetime+3000);
+
+
+      sfPending={resolve,timer};
+
+      sfOutstanding++;
+
+
+      sfWorker.postMessage(
+        'setoption name Skill Level value '+cfg.skill
+      );
+
+      sfWorker.postMessage('position fen '+fen);
+
+      sfWorker.postMessage('go movetime '+cfg.movetime);
+
+    });
+
+  }
+
+
+  function newStockfishGame(){
+
+    if(sfPending){
+
+      const old=sfPending;
+
+      sfPending=null;
+
+      clearTimeout(old.timer);
+
+      old.resolve(null);
+
+    }
+
+
+    if(sfReady && sfWorker){
+
+      if(sfOutstanding>0) sfWorker.postMessage('stop');
+
+      sfWorker.postMessage('ucinewgame');
+
+    }else{
+
+      /* já vai carregando o motor enquanto o jogador pensa */
+
+      ensureStockfish();
+
+    }
+
+  }
+
+
+  async function requestBotMove(fen,diffKey){
+
+    const cfg=DIFF_CONFIG[diffKey] || DIFF_CONFIG.medium;
+
+
+    if(cfg.blunderChance && Math.random()<cfg.blunderChance){
+
+      const randomMove=getRandomLegalMove(fen);
+
+      if(randomMove) return randomMove;
+
+    }
+
+
+    const best=await askStockfish(fen,cfg);
+
+    if(best && isLegalBotMove(fen,best)) return best;
+
+
+    return getRandomLegalMove(fen);
 
   }
 
@@ -7963,8 +7919,6 @@
     if(!gameActive||botThinking||game.turn()===playerSide)return;
 
     const sessionAtStart=gameSessionId;
-
-    hideEngineError();
 
     botThinking=true;showThinking();updateClockVisuals();syncClock();
 
@@ -7976,19 +7930,13 @@
 
     try{
 
-      mv=await requestBotMoveFromStockfish(fen,difficulty);
+      mv=await requestBotMove(fen,difficulty);
 
     }catch(error){
 
-      console.error('Erro ao calcular o lance do Bot:',error);
+      console.error('Erro ao decidir o lance do Bot:',error);
 
-      if(gameSessionId===sessionAtStart && gameActive){
-
-        showEngineError();
-
-      }
-
-      return;
+      mv=getRandomLegalMove(fen);
 
     }
 
@@ -7996,7 +7944,17 @@
     if(!mv){hideThinking();botThinking=false;checkGameEnd();return;}
     syncClock();
     if(gameSessionId!==sessionAtStart||!gameActive){botThinking=false;hideThinking();return;}
-    executeMove(mv.from,mv.to);
+
+    let moved=executeMove(mv.from,mv.to);
+
+    if(!moved && gameActive){
+
+      const alt=getRandomLegalMove(game.fen());
+
+      if(alt) executeMove(alt.from,alt.to);
+
+    }
+
     hideThinking();botThinking=false;renderBoard();
   }
 
@@ -12854,332 +12812,6 @@
   }
 
 
-  /* =========================================================
-     AMIGOS
-     ========================================================= */
-
-  /*
-    friendRequests/{toUid}/{fromUid}: pedido pendente.
-    users/{uid}/friends/{friendUid}: true — lista de amigos,
-    espelhada nos dois usuários quando o pedido é aceito.
-  */
-
-  async function sendFriendRequestByUsername(){
-
-    const input=document.getElementById('friendSearchInput');
-
-    const msg=document.getElementById('friendRequestMsg');
-
-    msg.style.display='none';
-
-
-    const uname=
-      input.value.trim().toLowerCase();
-
-    if(!uname || !currentUser) return;
-
-
-    if(uname===currentUser.username.toLowerCase()){
-
-      msg.textContent='Você não pode adicionar a si mesmo.';
-      msg.style.display='block';
-      return;
-
-    }
-
-
-    try{
-
-      const target=
-        await dbGet('usernames/'+uname);
-
-      if(!target){
-
-        msg.textContent='Usuário não encontrado.';
-        msg.style.display='block';
-        return;
-
-      }
-
-
-      const targetUid=target.uid;
-
-
-      const already=
-        await dbGet('users/'+currentUser.uid+'/friends/'+targetUid)
-          .catch(()=>null);
-
-      if(already){
-
-        msg.textContent='Vocês já são amigos.';
-        msg.style.display='block';
-        return;
-
-      }
-
-
-      await dbSet(
-        'friendRequests/'+targetUid+'/'+currentUser.uid,
-        {
-          fromUsername:currentUser.username,
-          fromAvatar:getUserAvatarId(currentUser),
-          createdAt:Date.now()
-        }
-      );
-
-
-      input.value='';
-
-      msg.style.color='#9fcf9f';
-      msg.style.borderColor='rgba(90,140,90,.4)';
-      msg.style.background='rgba(90,140,90,.12)';
-      msg.textContent='Pedido de amizade enviado!';
-      msg.style.display='block';
-
-    }catch(error){
-
-      console.error('Erro ao enviar pedido de amizade:',error);
-
-      msg.textContent='Não foi possível enviar o pedido.';
-      msg.style.display='block';
-
-    }
-
-  }
-
-
-  async function renderFriendRequests(){
-
-    const box=document.getElementById('friendRequestsBox');
-
-    if(!box) return;
-
-    if(!currentUser){ box.innerHTML=''; return; }
-
-
-    try{
-
-      const data=
-        await dbGet('friendRequests/'+currentUser.uid)
-          .catch(()=>null);
-
-      if(!data){ box.innerHTML=''; return; }
-
-
-      box.innerHTML=
-        Object.entries(data).map(([fromUid,req])=>(
-
-          '<div class="online-player-row" style="background:rgba(201,162,75,.06);">'+
-            '<span class="avatar-badge" style="width:28px;height:28px;">'+avatarSvgMarkup(req.fromAvatar||'avatar1')+'</span>'+
-            '<div style="flex:1;min-width:0;">'+
-              '<div style="font-size:13px;font-weight:600;">'+escapeHtml(req.fromUsername||'?')+'</div>'+
-              '<div style="font-size:11px;color:var(--text-dim);">quer ser seu amigo</div>'+
-            '</div>'+
-            '<button class="btn primary" data-accept-friend="'+fromUid+'" style="padding:4px 10px;font-size:12px;">Aceitar</button>'+
-            '<button class="btn ghost" data-decline-friend="'+fromUid+'" style="padding:4px 10px;font-size:12px;">Recusar</button>'+
-          '</div>'
-
-        )).join('');
-
-
-      box.querySelectorAll('[data-accept-friend]').forEach(btn=>{
-
-        btn.addEventListener('click',()=>
-          acceptFriendRequest(btn.dataset.acceptFriend)
-        );
-
-      });
-
-
-      box.querySelectorAll('[data-decline-friend]').forEach(btn=>{
-
-        btn.addEventListener('click',()=>
-          declineFriendRequest(btn.dataset.declineFriend)
-        );
-
-      });
-
-    }catch(error){
-
-      console.error('Erro ao carregar pedidos de amizade:',error);
-
-    }
-
-  }
-
-
-  async function acceptFriendRequest(fromUid){
-
-    if(!currentUser) return;
-
-    try{
-
-      await dbSet('users/'+currentUser.uid+'/friends/'+fromUid,true);
-
-      await dbSet('users/'+fromUid+'/friends/'+currentUser.uid,true);
-
-      await dbRemove('friendRequests/'+currentUser.uid+'/'+fromUid);
-
-
-      renderFriendRequests();
-
-      renderFriendsList();
-
-    }catch(error){
-
-      console.error('Erro ao aceitar amizade:',error);
-
-    }
-
-  }
-
-
-  async function declineFriendRequest(fromUid){
-
-    if(!currentUser) return;
-
-    try{
-
-      await dbRemove('friendRequests/'+currentUser.uid+'/'+fromUid);
-
-      renderFriendRequests();
-
-    }catch(error){
-
-      console.error('Erro ao recusar amizade:',error);
-
-    }
-
-  }
-
-
-  async function removeFriend(friendUid){
-
-    if(!currentUser) return;
-
-    if(!confirm('Remover esse amigo?')) return;
-
-    try{
-
-      await dbRemove('users/'+currentUser.uid+'/friends/'+friendUid);
-
-      await dbRemove('users/'+friendUid+'/friends/'+currentUser.uid);
-
-      renderFriendsList();
-
-    }catch(error){
-
-      console.error('Erro ao remover amigo:',error);
-
-    }
-
-  }
-
-
-  async function renderFriendsList(){
-
-    const box=document.getElementById('friendsListBox');
-
-    if(!box) return;
-
-    if(!currentUser){ box.innerHTML=''; return; }
-
-
-    try{
-
-      const friendsData=
-        await dbGet('users/'+currentUser.uid+'/friends')
-          .catch(()=>null);
-
-      const friendUids=
-        friendsData ? Object.keys(friendsData) : [];
-
-
-      if(friendUids.length===0){
-
-        box.innerHTML=
-          '<p style="color:var(--text-dim);font-size:12.5px;">Você ainda não tem amigos adicionados.</p>';
-
-        return;
-
-      }
-
-
-      const presenceData=
-        await dbGet('presence').catch(()=>null) || {};
-
-
-      const rows=await Promise.all(
-        friendUids.map(async uid=>{
-
-          let userData=null;
-
-          try{
-            userData=await dbGet('users/'+uid);
-          }catch(e){}
-
-          if(!userData) return '';
-
-
-          const pres=presenceData[uid];
-
-          const isOnline=!!pres;
-
-          const statusLabel=
-            !pres ? 'offline'
-              : pres.status==='bot' ? 'jogando vs Bot'
-              : pres.status==='online' ? 'em partida online'
-              : 'disponível';
-
-          const canWatch=
-            pres && (pres.status==='bot' || pres.status==='online');
-
-
-          return (
-            '<div class="online-player-row">'+
-              '<span class="avatar-badge" style="width:28px;height:28px;'+(isOnline?'':'opacity:.4;')+'">'+avatarSvgMarkup(getUserAvatarId(userData))+'</span>'+
-              '<div style="flex:1;min-width:0;">'+
-                '<div style="font-size:13px;font-weight:600;">'+escapeHtml(userData.username||'?')+'</div>'+
-                '<div style="font-size:11.5px;color:var(--text-dim);">Elo '+(userData.elo||1200)+' · '+statusLabel+'</div>'+
-              '</div>'+
-              (canWatch ? '<button class="btn ghost watch-btn" data-watch-uid="'+uid+'" title="Assistir">👁</button>' : '')+
-              '<button class="btn ghost" data-remove-friend="'+uid+'" title="Remover amigo" style="padding:4px 8px;">✕</button>'+
-            '</div>'
-          );
-
-        })
-      );
-
-
-      box.innerHTML=rows.join('');
-
-
-      box.querySelectorAll('.watch-btn').forEach(btn=>{
-
-        btn.addEventListener('click',()=>
-          spectatePlayer(btn.dataset.watchUid)
-        );
-
-      });
-
-
-      box.querySelectorAll('[data-remove-friend]').forEach(btn=>{
-
-        btn.addEventListener('click',()=>
-          removeFriend(btn.dataset.removeFriend)
-        );
-
-      });
-
-    }catch(error){
-
-      console.error('Erro ao carregar amigos:',error);
-
-    }
-
-  }
-
-
   /* Recurso de "adicionar amigos" removido — a lista de jogadores
      online agora mostra todo mundo automaticamente, sem amizade. */
 
@@ -13556,27 +13188,6 @@
     }
 
     return a;
-
-  }
-
-
-  async function loadChampionshipParticipants(){
-
-    const data=
-      await dbGet('tournaments/bot2026/participants')
-        .catch(()=>null);
-
-    if(!data) return [];
-
-    return Object.values(data).map(p=>({
-
-      uid:p.uid,
-      username:p.username,
-      elo:Number(p.elo||1200),
-      avatar:'avatar1',
-      isBot:false
-
-    }));
 
   }
 
