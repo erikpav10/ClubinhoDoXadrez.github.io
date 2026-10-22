@@ -109,7 +109,7 @@ const LUCK_MUL=1.5;          /* Elixir da Sorte */
 
 /* Fazenda: nível 1 = terreno vazio ... nível 10 = castelo.
    level = nível do herói exigido; mats = materiais por tier (6 números). */
-const LAND_LEVEL=25, LAND_PRICE=600000;
+const LAND_LEVEL=10, LAND_PRICE=100;
 const FARM_BONUS=0.01;       /* +1% de ouro e XP por nível da fazenda acima do 1 */
 const FARM=[
  {lv:1, name:'Terreno Vazio',       level:0,  mats:[0,0,0,0,0,0],        desc:'Só terra e mato. Tudo começa aqui.'},
