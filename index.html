@@ -11655,7 +11655,7 @@
      Campanha é aberta. O progresso fica em users/{uid}/genesis.
      ========================================================= */
 
-  const GENESIS_VERSION='1'; /* aumente ao atualizar os arquivos, para limpar o cache */
+  const GENESIS_VERSION='2'; /* aumente ao atualizar os arquivos, para limpar o cache */
   let genesisPromise=null;
   let genesisMounted=false;
 
@@ -11682,7 +11682,7 @@
       css.href='genesis/genesis.css'+v;
       document.head.appendChild(css);
 
-      for(const file of ['core','art','stage','genesis']){
+      for(const file of ['core','art','stage','city','farm','genesis']){
         await genesisLoadScript('genesis/'+file+'.js'+v);
       }
 
@@ -11730,7 +11730,7 @@
       root.innerHTML=
         '<div class="info-card" style="text-align:center;">'+
         '<h3>Não foi possível carregar o <span>Chess Genesis</span></h3>'+
-        '<p>Confirme que a pasta <b>genesis</b> (com core.js, art.js, stage.js, genesis.js e genesis.css) '+
+        '<p>Confirme que a pasta <b>genesis</b> (com core.js, art.js, stage.js, city.js, farm.js, genesis.js e genesis.css) '+
         'foi enviada ao GitHub, ao lado do index.html, e recarregue com Ctrl+F5.</p></div>';
       return;
     }
