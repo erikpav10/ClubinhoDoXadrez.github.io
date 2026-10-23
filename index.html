@@ -11655,7 +11655,7 @@
      Campanha é aberta. O progresso fica em users/{uid}/genesis.
      ========================================================= */
 
-  const GENESIS_VERSION='3'; /* aumente ao atualizar os arquivos, para limpar o cache */
+  const GENESIS_VERSION='4'; /* aumente ao atualizar os arquivos, para limpar o cache */
   let genesisPromise=null;
   let genesisMounted=false;
 
@@ -11682,7 +11682,7 @@
       css.href='genesis/genesis.css'+v;
       document.head.appendChild(css);
 
-      for(const file of ['core','art','stage','city','farm','genesis']){
+      for(const file of ['core','art','stage','city','farm','arena','genesis']){
         await genesisLoadScript('genesis/'+file+'.js'+v);
       }
 
